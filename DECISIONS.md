@@ -34,7 +34,7 @@ Each decision is recorded as **context → options → choice → trade-off acce
 
 **Options.** All Go (fastest for me, ignores their first line) · all Python (slower for me, abandons my strength) · split by responsibility.
 
-**Choice.** Go for the core API, ranking, caching and crawlers. Python/FastAPI for a small, focused AI service: intent parsing, attribute extraction, explanation, and the evaluation harness. They talk over a small HTTP contract with a strict schema.
+**Choice.** Go for the core API, ranking, caching, rate limiting and metrics. Python for the AI service — intent parsing, attribute extraction, explanation and the evaluation harness — and for the crawlers (see decision ۶). They talk over a small HTTP contract with a strict schema.
 
 **Why.** This is not a hedge — it is where each language is actually better. The search path fans out to several indexes and must hold p95 under 300 ms, which is Go's job. The evaluation tooling, model clients and schema validation ecosystem live in Python, and the eval harness belongs next to the model calls it measures.
 
