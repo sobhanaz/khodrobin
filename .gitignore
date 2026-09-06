@@ -1,0 +1,38 @@
+# Go
+/api/bin/
+/crawler/bin/
+*.test
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+dist/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Data
+/data/raw/
+/data/*.sql
+/data/*.sql.gz
+!/data/seed/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
