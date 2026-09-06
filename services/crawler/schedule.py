@@ -48,6 +48,19 @@ def bootstrap() -> None:
     log(f"seeded {RAW} from {SEED} ({raw.stat().st_size / 1e6:.1f} MB)")
 
 
+def rebuild_only() -> None:
+    """Rebuild the index from raw data already on disk, without crawling.
+
+    Run once at startup. A collection cycle takes several minutes (Divar alone
+    is throttled to 4s per request), so without this a parsing change deployed
+    at 22:26 would not reach users until the crawl finished — and a change that
+    only affects parsing does not need new data at all.
+    """
+    rc = run([sys.executable, "build_index.py", "--raw", RAW, "--out", INDEX])
+    if rc != 0:
+        log(f"startup rebuild failed ({rc}); the API keeps serving the previous index")
+
+
 def cycle() -> None:
     rc = run([sys.executable, "run.py", "--out", RAW, "--pages", PAGES, "--cities", *CITIES])
     if rc != 0:
@@ -61,6 +74,9 @@ def cycle() -> None:
 def main() -> int:
     log(f"crawler starting; interval={INTERVAL}s cities={' '.join(CITIES)} pages={PAGES}")
     bootstrap()
+    # Publish what this build makes of the existing data before spending
+    # minutes fetching more of it.
+    rebuild_only()
     while True:
         started = time.monotonic()
         try:
