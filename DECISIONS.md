@@ -75,3 +75,38 @@ Each decision is recorded as **context → options → choice → trade-off acce
 **Why.** A demo that can fail is a demo that will fail, at the worst moment.
 
 **Trade-off accepted.** Repo size, and a snapshot that ages. Refreshed before submission.
+
+---
+
+## ۶. کراولر دیوار از SorinFlow می‌آید — The Divar crawler is reused, not rewritten
+
+**Context.** [SorinFlow](https://github.com/Tecso-Dev/SorinFlow-DaTA-mAmager) is my own production Divar collector — FastAPI + Playwright, running live on an Iranian VPS. Its scraper package is ~7,800 lines of code that has been maintained against a hostile, changing target.
+
+**What transfers unchanged:**
+
+| Module | Why it transfers |
+|---|---|
+| `stealth.py` | Browser args, context options and the stealth JS payload are category-agnostic |
+| The `postlist/w/search` replay strategy | Divar's feed endpoint is the same for every category |
+| DOM-scroll + cursor-pagination hybrid | Depth is the API's job, resilience is the DOM's; both independent of category |
+| `normalize_persian_digits`, `parse_persian_number`, `parse_price_with_unit`, `extract_divar_id`, `parse_listing_card` | Persian text and price primitives, no real-estate assumptions |
+
+**The single most valuable thing inherited** is a negative result verified on the wire on 2026-09-02: `GET api.divar.ir/v8/web-search/{city}/{category}` is dead. It returns **HTTP 200** with a `BLOCKING_VIEW` widget saying «نیاز به بروزرسانی», and a `last_post_date` of `-1` that is truthy in Python and poisons the next cursor. It looks like success and yields nothing. Starting fresh, that costs a day to discover.
+
+**What does not transfer.** `extract_property_details`, `extract_rooms_from_text`, amenities and corner-type detection are real-estate specific and get replaced by car attribute extraction (brand, model, trim, year, mileage, body status).
+
+**Choice.** Fork the collection layer, replace the parsing layer, keep the category slug configurable (`real-estate` → `car`).
+
+**Trade-off accepted.** The crawler is Python/Playwright rather than Go. That moves a planned Go component into Python — which is the right call anyway: it is heavier on Playwright than on concurrency, and it widens the Python surface of this project, which is what the job description asks for. Go keeps the core API, ranker, cache, rate limiting and metrics.
+
+---
+
+## ۷. بدون احراز هویت، بدون شماره تماس — No authentication, no phone numbers
+
+**Context.** SorinFlow also contains `auth.py`, `otp_store.py`, `contact_extractor.py` and `captcha_solver.py` — authenticated Divar sessions that extract advertiser phone numbers. That code works and it is right there.
+
+**Choice.** None of it comes into KhodroBin. Collection is public, unauthenticated and rate-limited. No login, no OTP session, no CAPTCHA solving, no phone numbers. Where a stable seller identifier is needed to help decide that two ads are the same car, it is a salted SHA-256 of a public identifier, and the raw value is never persisted.
+
+**Why.** Two reasons, and the first is sufficient on its own. Harvesting personal contact data for a public demo is not something to hand a company as a work sample. Second, price comparison does not need it: cross-listing identity is resolvable from normalized attributes and price proximity, which is the more interesting problem anyway.
+
+**Trade-off accepted.** Identity resolution loses its strongest single signal and has to be genuinely good instead. Documented in `CRAWLING.md` alongside the rate limits, the bot User-Agent and the `robots.txt` policy.
