@@ -47,3 +47,18 @@ jobs:
       - name: test
         working-directory: crawler
         run: python -m pytest -q
+
+  caddy:
+    name: caddyfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A malformed Caddyfile took production down once: Caddy crash-looped
+      # while every other container reported healthy, so nothing failed except
+      # the smoke test at the very end. Validate it before it can ship.
+      - name: validate
+        run: |
+          docker run --rm \
+            -e DOMAINS="example.com" \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
