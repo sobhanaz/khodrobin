@@ -27,7 +27,7 @@ export function useSearch() {
     pending.value = true
     failed.value = false
     try {
-      data.value = await $fetch<SearchResponse>('/api/v1/search', {
+      data.value = await $fetch<SearchResponse>(apiUrl('/api/v1/search'), {
         params: { q: query.value, mode: mode.value, limit: 24 },
       })
     } catch {
@@ -45,5 +45,5 @@ export function useSearch() {
 }
 
 export function useStats() {
-  return useFetch<StatsResponse>('/api/v1/stats', { key: 'stats' })
+  return useFetch<StatsResponse>(() => apiUrl('/api/v1/stats'), { key: 'stats' })
 }

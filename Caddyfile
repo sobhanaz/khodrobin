@@ -14,7 +14,19 @@
 		-Server
 	}
 
-	# Everything is the API until the Nuxt frontend lands, at which point this
-	# splits into /api/* to api and the rest to web.
-	reverse_proxy api:8080
+	# The Go service owns the data surface and the probes; Nuxt owns everything
+	# a person sees. Same origin, so the browser makes no cross-origin request
+	# and there is no CORS surface at all.
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+	handle /healthz {
+		reverse_proxy api:8080
+	}
+	handle /readyz {
+		reverse_proxy api:8080
+	}
+	handle {
+		reverse_proxy web:3000
+	}
 }

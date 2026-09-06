@@ -12,6 +12,18 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    depends_on: [api, web]
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/${GHCR_OWNER}/khodrobin-web:${TAG:-latest}
+    environment:
+      # Server-side rendering talks to the Go service directly over the compose
+      # network; the browser calls the same origin and Caddy routes it.
+      NUXT_API_BASE: http://api:8080
+      NUXT_PUBLIC_API_BASE: ""
+    expose:
+      - "3000"
     depends_on: [api]
     restart: unless-stopped
 

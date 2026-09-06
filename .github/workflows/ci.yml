@@ -71,3 +71,20 @@ jobs:
             -e DOMAINS="example.com" \
             -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+  web:
+    name: web (nuxt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: services/web/package-lock.json
+      - name: install
+        working-directory: services/web
+        run: npm ci --no-audit --no-fund
+      - name: build
+        working-directory: services/web
+        run: npm run build

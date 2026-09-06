@@ -18,6 +18,7 @@ permissions:
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-api
   CRAWLER_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-crawler
+  WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-web
 
 jobs:
   build:
@@ -54,6 +55,17 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
+
+      - name: web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/web
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.WEB_IMAGE }}:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
       - name: crawler image
         uses: docker/build-push-action@v6
