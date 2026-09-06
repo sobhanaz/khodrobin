@@ -57,11 +57,15 @@ If you swap, keep every section below. Only the crawlers and the canonical schem
 
 | Source | Coverage | Access | Status |
 |---|---|---|---|
-| [دیوار](https://divar.ir/s/iran/car) | Market leader by volume | Playwright + replay of the site's own `POST /postlist/w/search`, cursor pagination | **Solved** — forked from SorinFlow |
-| [باما](https://bama.ir/car) | Most complete car-specific data (trim, body status) | To probe: server-rendered listing pages | Day 1 |
-| [همراه‌مکانیک](https://www.hamrah-mechanic.com/cars-for-sale/) | 2,000+ inspected cars, cleanest attributes | To probe | Day 1 |
+| [دیوار](https://divar.ir/s/iran/car) | Market leader by volume | **JSON-LD `@type: Car`** server-rendered into `/s/{city}/car[/{brand}]`. Brand-filtered pages return 48 vs 24 | ✅ done |
+| [باما](https://bama.ir/car) | Richest attributes (trim, body_status, fuel) | **Public JSON API** `GET /cad/api/search?pageIndex=N` | ✅ done |
+| [همراه‌مکانیک](https://www.hamrah-mechanic.com/cars-for-sale/) | Inspected cars, cleanest fields | **`__NEXT_DATA__`** at `props.pageProps.cars.list` | ✅ done |
 
 Fallbacks if one blocks hard: شیپور، اتوماتیک، خودرو۴۵.
+
+**No browser automation is required.** All three publish structured data over plain HTTP; `httpx` is enough. The Playwright machinery inherited from SorinFlow is not needed for list pages.
+
+**Divar soft-blocks without changing the status code.** Under sustained crawling it simply stops including the JSON-LD and still answers HTTP 200. The crawler treats an empty 200 as a strike and throttles Divar to 4s between requests. Measured: at ~1 req/s it goes empty within about a dozen requests.
 
 **Known dead end, verified on the wire 2026-09-02.** `GET api.divar.ir/v8/web-search/{city}/{category}` returns **HTTP 200** with a `BLOCKING_VIEW` widget («نیاز به بروزرسانی») and `"last_post_date": -1`. It looks like a success, yields zero listings, and the `-1` cursor is truthy in Python so it poisons the next request. Do not spend a day rediscovering this — the working path is replaying the browser's own search POST.
 
@@ -470,7 +474,14 @@ You have already shipped phone-OTP + JWT + refresh in the Digikala clone. Reuse 
 
 **You have already proven this path.** SorinFlow runs live at `sorinflow.com` on a single-node k3s cluster on an Iranian VPS behind Traefik, with GitHub Actions deploying to it. Reuse that pipeline shape rather than inventing a new one — and reuse the VPS if it has headroom.
 
-> **Updated (decision ۹):** with a single VPS available, the box goes in **Frankfurt** and runs the whole product; the crawler runs on a residential Iranian IP and pushes to an authenticated `/ingest`. The rest of this section still applies — the reachability test from Iranian mobile data is unchanged and non-negotiable.
+> **SUPERSEDED — measured, see decisions ۱۰ and ۱۱.** The split topology below was built on an assumption that proved false. From the production box (Vultr Amsterdam, 8 vCPU / 15 GB) both the model APIs *and* all three Iranian sources are reachable:
+>
+> ```
+> api.openai.com=401  api.anthropic.com=405     ← reachable, just unauthenticated
+> divar.ir=200        bama.ir=200  hamrah=200
+> ```
+>
+> So there is **one server** running everything, no Iran box, no ingest seam, no laptop dependency. Live at `khodrobin.noxioai.com` / `khodro6.noxioai.com`. Vercel and Firebase are excluded from the submitted URL entirely — both are unreachable from Iran under US sanctions. The one instruction from this section that still stands unchanged: **test the live link from Iranian mobile data before submitting.**
 
 **Recommended shape:**
 
