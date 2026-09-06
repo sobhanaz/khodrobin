@@ -110,3 +110,45 @@ Each decision is recorded as **context → options → choice → trade-off acce
 **Why.** Two reasons, and the first is sufficient on its own. Harvesting personal contact data for a public demo is not something to hand a company as a work sample. Second, price comparison does not need it: cross-listing identity is resolvable from normalized attributes and price proximity, which is the more interesting problem anyway.
 
 **Trade-off accepted.** Identity resolution loses its strongest single signal and has to be genuinely good instead. Documented in `CRAWLING.md` alongside the rate limits, the bot User-Agent and the `robots.txt` policy.
+
+---
+
+## ۸. زیرساخت دوپایه: کراولر در ایران، اپ در فرانکفورت — Split infrastructure
+
+**Context.** Two hard constraints point in opposite directions, and neither is negotiable.
+
+| Constraint | Consequence |
+|---|---|
+| Iranian marketplaces treat foreign datacenter IPs as hostile — throttling, CAPTCHA, outright blocks | The **crawler** wants an Iranian IP |
+| OpenAI, Anthropic and Google block Iranian IPs outright (sanctions), and the block is on their side, so no amount of server config fixes it | The **AI service** cannot run on an Iranian IP |
+| The reviewer opens the demo from Tehran | The **web tier** must be reachable from inside Iran |
+
+A single box cannot satisfy all three. A Vercel deployment satisfies none of them — Vercel geo-blocks Iranian visitors at the edge, so the reviewer would see nothing.
+
+**Options.**
+- *All-Iranian VPS* — crawls perfectly, reviewer-friendly, but the AI layer is limited to local models only (Ollama).
+- *All-foreign VPS* — model APIs work, but crawling Iranian sources is fragile and may fail silently at the worst moment.
+- *Split.*
+
+**Choice.** Split, with a deliberately thin seam.
+
+```
+┌────────────── Iran (VPS or the existing SorinFlow box) ──────────────┐
+│  crawler (Playwright)  ──►  local queue  ──►  authenticated push      │
+└───────────────────────────────────┬──────────────────────────────────┘
+                                    │  POST /ingest  (mTLS or bearer, batched JSONL)
+┌───────────────────────────────────▼──────────────────── Frankfurt ───┐
+│  web (Nuxt) · api (Go) · ai (FastAPI) · postgres · elasticsearch      │
+│  redis · caddy — reachable from Iran, reaches model APIs              │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+The crawler is the only component that needs an Iranian IP, and it needs nothing from the internet except the three sources. Everything else moves to a Hetzner/Netcup box in Frankfurt, which can reach the model APIs and which Iranian users can reach normally — a plain VPS you control blocks nobody, unlike a CDN edge that geo-filters.
+
+**Why this is worth saying on camera.** It is a real constraint that a Tehran-based reviewer will recognise instantly as true, and the response is an architectural decision rather than a workaround. «کراولر باید IP ایران داشته باشه چون منابع اجازه نمی‌دن؛ لایه‌ی مدل نمی‌تونه IP ایران داشته باشه چون API‌ها تحریم می‌کنن. پس جداشون کردم و با یک endpoint احراز‌هویت‌شده به هم وصلشون کردم.»
+
+**Trade-off accepted.** Two machines, a network seam, and an ingest contract to secure and monitor. Mitigated by making ingest the *only* thing crossing the seam: batched, idempotent by content hash, authenticated, retried with backoff, and alerted on staleness. If the Iran box dies, the demo keeps serving from the last ingest — it degrades, it does not break.
+
+**To verify on day 1.** Whether Divar and Bama actually serve a Frankfurt datacenter IP acceptably. `divar.ir` is reachable internationally; the open question is rate-limiting and CAPTCHA behaviour for foreign ASNs under sustained use. If they behave, collapse to a single Frankfurt box and delete this decision — one machine beats two. Do not assume it either way; measure it.
+
+**Fallback if the model APIs stay out of reach.** Ollama with Qwen 2.5 7B, already a one-line provider switch. The product must work with a local model, and that is a design constraint, not a contingency.
