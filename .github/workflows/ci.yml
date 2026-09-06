@@ -30,3 +30,20 @@ jobs:
       - name: build
         working-directory: api
         run: go build ./...
+
+  crawler:
+    name: crawler (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: crawler/requirements.txt
+      - name: install
+        working-directory: crawler
+        run: pip install -r requirements.txt pytest
+      - name: test
+        working-directory: crawler
+        run: python -m pytest -q
