@@ -25,6 +25,8 @@ class HostLimiter:
         self.jitter = jitter
         self.breaker_threshold = breaker_threshold
         self.breaker_cooldown = breaker_cooldown
+        # A host may ask for a gentler cadence than the default.
+        self.min_interval_for: dict[str, float] = {}
         self._last: dict[str, float] = {}
         self._strikes: dict[str, int] = {}
         self._open_until: dict[str, float] = {}
@@ -36,11 +38,22 @@ class HostLimiter:
 
     def wait(self, host: str) -> None:
         with self._lock:
+            interval = self.min_interval_for.get(host, self.min_interval)
             gap = time.monotonic() - self._last.get(host, 0.0)
-            delay = max(0.0, self.min_interval - gap) + random.uniform(0, self.jitter)
+            delay = max(0.0, interval - gap) + random.uniform(0, self.jitter)
             self._last[host] = time.monotonic() + delay
         if delay:
             time.sleep(delay)
+
+    def record_empty(self, host: str) -> None:
+        """A 200 that carried no data.
+
+        Divar answers HTTP 200 with the listing JSON-LD simply absent once it
+        decides you are crawling too fast. Status codes therefore cannot be
+        trusted as a health signal — an empty success is a soft block and has to
+        count against the host exactly like a 429 would.
+        """
+        self.record(host, 429)
 
     def record(self, host: str, status: int) -> None:
         if status == 429 or status >= 500:
