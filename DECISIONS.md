@@ -181,3 +181,55 @@ Elasticsearch alone wants 1–2 GB, so 8 GB is the floor, not the target. Hetzne
 **The honest framing for the video.** Not "I couldn't afford two servers", but: «کراولر روی IP خانگی ایران اجراست چون منابع ایرانی به IP دیتاسنتر خارجی جواب نمی‌دن، و اپ روی فرانکفورت چون API مدل‌ها از ایران در دسترس نیست. تنها چیزی که بین این دو رد و بدل می‌شه یک ingest احراز‌هویت‌شده‌ست.» That is a true constraint, met with a design, and every Iranian engineer watching will recognise it.
 
 **Still to measure on day 1.** Whether Divar and Bama tolerate the Frankfurt IP under sustained use. If they do, the crawler moves onto the VPS and the local dependency disappears entirely. Measure before assuming — in either direction.
+
+---
+
+## ۱۰. یک سرور، همه‌چیز — measured, and the split was unnecessary
+
+*Supersedes decisions ۸ and ۹. Both were designed around an assumption that turned out to be false.*
+
+**Context.** Decisions ۸ and ۹ split the system because Iranian marketplaces were assumed to reject foreign datacenter IPs while model APIs reject Iranian ones. Decision ۹ ended with an instruction: *measure it on day 1, do not assume it either way.*
+
+**The measurement.** From the Vultr Amsterdam box:
+
+```
+api.openai.com    = 401     model APIs reachable (401 = no key, not blocked)
+api.anthropic.com = 405
+divar.ir          = 200     Iranian sources reachable too
+bama.ir           = 200
+hamrah-mechanic   = 200
+```
+
+**Choice.** One server. No Iran box, no ingest seam, no dependency on my laptop being online. The crawler runs on the same machine as everything else.
+
+**Why this is the better outcome.** The split design was defensible but it bought complexity to solve a problem that did not exist. Deleting it removes a network hop, an authentication surface, a staleness alert and an entire failure mode. The honest version of the video is now simpler and stronger: one box, boring stack, everything shipped from GitHub.
+
+**What survives from ۸ and ۹.** The constraint itself is real and worth stating — a Tehran reviewer must be able to open the link, and model APIs will not answer an Iranian IP. Both are satisfied by putting the box in Amsterdam. And the caution stands: Divar *does* push back on sustained crawling, just not by IP geography — see decision ۱۲.
+
+**Live at** `khodrobin.noxioai.com` (A → 95.179.189.5) and `khodro6.noxioai.com` (AAAA), both unproxied so Caddy can answer the ACME challenge, both on one certificate.
+
+---
+
+## ۱۱. نه Vercel، نه Firebase — the demo is not hosted on anything that blocks Iran
+
+**Context.** Both were considered for hosting the front end.
+
+**The disqualifying fact.** Vercel is not reachable from Iran. Its upstream provider blocks OFAC-sanctioned countries at the infrastructure level and Vercel's own community threads describe it as outside their control. Firebase sits behind Google Cloud and falls in the same sanctions class. The reviewer for this application is in Tehran.
+
+A link the reviewer cannot open is not a partial failure. It looks identical to having built nothing, and there is no way to find out that is what happened.
+
+**Choice.** The submitted URL is always the VPS. Vercel may host a mirror and PR preview deployments for convenience while building — that is real value for review workflow — but it never appears in the README, the video, or the submission form.
+
+**Firebase is declined outright**, for a second reason beyond reachability: this product is relational. Market medians are `GROUP BY spec_key` over offers. Deduplication is a join. Postgres is the right tool and it is already running on a box with 15 GB of RAM doing nothing. Adding a document store would mean a second source of truth to keep in sync, for no capability we lack.
+
+**Trade-off accepted.** No edge CDN in front of the app. At the traffic a hiring demo sees, Caddy with zstd on an 8-vCPU box is not the bottleneck, and Cloudflare can be put in front later without touching the application.
+
+---
+
+## ۱۲. اعتبارسنجی قبل از استقرار — validate config before it can ship
+
+**Context.** A Caddyfile with a single-line `handle /healthz { reverse_proxy api:8080 }` block is invalid syntax. Caddy rejected it and crash-looped, while Postgres, Redis and the API all reported healthy. Nothing failed loudly; the only signal was the smoke test failing three minutes into the deploy.
+
+**Choice.** CI runs `caddy validate` on every push. Config is code and gets the same gate the code gets.
+
+**Why it is worth a decision entry.** The failure mode is the interesting part: every health check was green while the thing in front of them was dead. Liveness probes on components tell you nothing about whether the system answers, which is exactly why the deploy ends with an external smoke test against the public URL rather than a `docker compose ps`.
