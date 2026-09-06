@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           cd /opt/khodrobin
           cat > .env <<ENVFILE
-          DOMAIN=${{ secrets.DEPLOY_DOMAIN }}
+          DOMAINS=${{ secrets.DEPLOY_DOMAIN }}
           GHCR_OWNER=${{ github.repository_owner }}
           TAG=${TAG}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
@@ -89,9 +89,9 @@ jobs:
         run: |
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-              "https://${{ secrets.DEPLOY_DOMAIN }}/healthz" || true)
+              "https://$(echo '${{ secrets.DEPLOY_DOMAIN }}' | awk '{print $1}')/healthz" || true)
             if [ "$code" = "200" ]; then
-              echo "live: https://${{ secrets.DEPLOY_DOMAIN }}/healthz"
+              echo "live: https://$(echo '${{ secrets.DEPLOY_DOMAIN }}' | awk '{print $1}')/healthz"
               exit 0
             fi
             echo "attempt $i: http=$code"; sleep 6

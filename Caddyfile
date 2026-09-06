@@ -1,4 +1,7 @@
-{$DOMAIN} {
+# DOMAINS is a space-separated list so one certificate request covers every
+# name we answer on. IPv6 has its own name for now because some Iranian mobile
+# networks route v6 better than v4.
+{$DOMAINS} {
 	encode zstd gzip
 
 	# The reviewer may open this from Iran on a phone; keep the surface small
