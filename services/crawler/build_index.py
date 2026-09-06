@@ -79,6 +79,7 @@ def build(raw_path: pathlib.Path) -> dict:
             "body_status": car["body_status"],
             "city": car["city"],
             "url": car["url"],
+            "image": car.get("image"),
             "seen_at": car["fetched_at"],
             "flags": found,
             # Kept so the UI can show what the source actually said before we
@@ -102,8 +103,11 @@ def build(raw_path: pathlib.Path) -> dict:
         if model_fa == brand_fa:
             model_fa = ""
 
+        image = next((o["image"] for o in sorted(offers, key=lambda o: o["price"]) if o.get("image")), None)
+
         specs.append({
             "key": key,
+            "image": image,
             "brand": brand,
             "brand_fa": brand_fa,
             "model": model,

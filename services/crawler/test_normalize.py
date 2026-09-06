@@ -66,3 +66,21 @@ def test_khodro45_turbo_variant_still_reads_as_automatic():
         "price": 3_000_000_000, "city": {"title": "تهران"}, "slug": "X",
     })
     assert car["transmission"] == "اتوماتیک"
+
+
+def test_every_source_yields_an_image_url():
+    # A car listing without a photo is a worse product, and all four sources
+    # publish one. Dropping them was an oversight, so this pins it down.
+    divar = n.from_divar({"name": "x", "image": "https://s100.divarcdn.com/a.webp",
+                          "offers": {"price": "3100000000"}, "productionDate": "1385"})
+    bama = n.from_bama({"detail": {"title": "x", "image": "https://cdn-sth1.bama.ir/b.jpg", "year": "1385"},
+                        "price": {"price": "320,000,000"}})
+    hamrah = n.from_hamrah({"carNamePersian": "x", "imageUrl": "https://cdn.hamrah-mechanic.com/c.jpg",
+                            "price": 740_000_000, "carYear": 1398, "km": 100})
+    k45 = n.from_khodro45({"car_properties": {"brand": {"title_en": "Kia"}, "model": {"title_en": "Rio"},
+                                              "year": "1400"},
+                           "car_specifications": {"klm": 10}, "price": 1_000_000_000,
+                           "image": {"url": "https://media.khodro45.com/public/image/d"},
+                           "city": {"title": "تهران"}, "slug": "S"})
+    for car in (divar, bama, hamrah, k45):
+        assert car["image"], car

@@ -111,6 +111,7 @@ def from_divar(p: dict) -> dict:
         "transmission": _lookup(TRANSMISSION, p.get("vehicleTransmission")),
         "city": info.get("city_persian"),
         "url": p.get("url"),
+        "image": p.get("image"),
     }
 
 
@@ -131,6 +132,7 @@ def from_bama(p: dict) -> dict:
         "transmission": _lookup(TRANSMISSION, d.get("transmission")),
         "city": (d.get("location") or "").split("/")[0].strip() or None,
         "url": "https://bama.ir" + (d.get("url") or ""),
+        "image": d.get("image"),
     }
 
 
@@ -150,6 +152,7 @@ def from_hamrah(p: dict) -> dict:
         "transmission": _lookup(TRANSMISSION, p.get("gearBoxPersian")),
         "city": (p.get("carLocation") or "").split("،")[0].strip() or None,
         "url": "https://www.hamrah-mechanic.com" + (p.get("exhibitionDetailUrl") or ""),
+        "image": p.get("imageUrl"),
     }
 
 
@@ -177,6 +180,7 @@ def from_khodro45(p: dict) -> dict:
         "transmission": _lookup(TRANSMISSION, props.get("trim")),
         "city": (p.get("city") or {}).get("title"),
         "url": f"https://khodro45.com/used-car/{p.get('slug')}/" if p.get("slug") else "https://khodro45.com/used-car/",
+        "image": (p.get("image") or {}).get("url"),
         # Unique to this source: whether the odometer was verified. None means
         # "not checked", which is different from False ("checked, did not match").
         "km_verified": specs.get("is_klm_matched"),
