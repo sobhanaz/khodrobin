@@ -30,6 +30,7 @@ type Offer struct {
 	BodyStatus  *string `json:"body_status"`
 	City        *string `json:"city"`
 	URL         string  `json:"url"`
+	Image       *string `json:"image"`
 	SeenAt      string  `json:"seen_at"`
 	Flags       []Flag  `json:"flags"`
 	VsMedianPct float64 `json:"vs_median_pct"`
@@ -40,6 +41,7 @@ type Offer struct {
 
 type Spec struct {
 	Key         string  `json:"key"`
+	Image       *string `json:"image"`
 	Brand       string  `json:"brand"`
 	BrandFa     string  `json:"brand_fa"`
 	Model       string  `json:"model"`
