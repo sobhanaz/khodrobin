@@ -41,7 +41,7 @@ from normalize import normalize  # noqa: E402
 from plausibility import flags  # noqa: E402
 from vocab import BRANDS, MODELS  # noqa: E402
 
-SOURCE_FA = {"divar": "دیوار", "bama": "باما", "hamrah": "همراه‌مکانیک"}
+SOURCE_FA = {"divar": "دیوار", "bama": "باما", "hamrah": "همراه‌مکانیک", "khodro45": "خودرو۴۵"}
 GEARBOX_FA = {"at": "اتوماتیک", "mt": "دنده‌ای", "na": None}
 
 
@@ -95,12 +95,19 @@ def build(raw_path: pathlib.Path) -> dict:
         median = int(statistics.median(prices))
         for o in offers:
             o["vs_median_pct"] = round(100 * (o["price"] - median) / median, 1)
+        brand_fa = BRANDS.get(brand, (brand, ()))[0]
+        model_fa = MODELS.get((brand, model), (model, ()))[0]
+        # A base variant repeats the brand as its own name («کوییک کوییک»).
+        # Blank the model so the display reads as a person would say it.
+        if model_fa == brand_fa:
+            model_fa = ""
+
         specs.append({
             "key": key,
             "brand": brand,
-            "brand_fa": BRANDS.get(brand, (brand, ()))[0],
+            "brand_fa": brand_fa,
             "model": model,
-            "model_fa": MODELS.get((brand, model), (model, ()))[0],
+            "model_fa": model_fa,
             "trim": None if trim == "base" else trim,
             "gearbox": gearbox,
             "gearbox_fa": GEARBOX_FA.get(gearbox),

@@ -121,7 +121,8 @@ MODELS: dict[tuple[str, str], tuple[str, tuple[str, ...]]] = {
 
     ("chery", "arrizo5"):  ("آریزو ۵", ("arizo 5", "arrizo 5", "آریزو 5", "آریزو ۵")),
     ("chery", "arrizo6"):  ("آریزو ۶", ("arizo 6", "arrizo 6", "آریزو 6", "آریزو ۶")),
-    ("chery", "tiggo7"):   ("تیگو ۷", ("tiggo 7", "تیگو 7", "تیگو ۷")),
+    ("chery", "tiggo5"):   ("تیگو ۵", ("tiggo 5", "tiggo5", "تیگو 5", "تیگو ۵")),
+    ("chery", "tiggo7"):   ("تیگو ۷", ("tiggo 7", "tiggo7", "تیگو 7", "تیگو ۷")),
     ("chery", "tiggo8"):   ("تیگو ۸", ("tiggo 8", "تیگو 8", "تیگو ۸")),
 
     ("kmc", "j7"):         ("J7", ("j7", "j 7")),

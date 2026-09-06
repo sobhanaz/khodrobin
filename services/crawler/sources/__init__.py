@@ -4,6 +4,6 @@ Every source returns *raw* records — whatever the site gave us, untouched, plu
 a small envelope. Normalization happens later and separately, so a parser bug
 never costs us a re-crawl.
 """
-from . import bama, divar, hamrah
+from . import bama, divar, hamrah, khodro45
 
-ALL = {"divar": divar, "bama": bama, "hamrah": hamrah}
+ALL = {"divar": divar, "bama": bama, "hamrah": hamrah, "khodro45": khodro45}

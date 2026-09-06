@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* Design tokens. Dark and technical, in Torob's register without copying it:
+   a hard red for action, green for corroboration, amber for doubt. */
+@theme {
+  --color-bg: #07080b;
+  --color-bg-2: #0b0d12;
+  --color-surface: #11141c;
+  --color-surface-2: #161a24;
+  --color-ink: #f4f6fa;
+  --color-ink-2: #a4adbe;
+  --color-ink-3: #6b7488;
+  --color-accent: #ff2e4d;
+  --color-good: #3ddc84;
+  --color-warn: #ffb02e;
+
+  --font-sans: Vazirmatn, "IRANSansX", "IRANSans", Tahoma, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  /* Depth without images: two soft washes and a faint grid that fades out. */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(60rem 40rem at 85% -10%, rgba(255, 46, 77, 0.10), transparent 60%),
+      radial-gradient(50rem 35rem at 10% 5%, rgba(61, 220, 132, 0.055), transparent 60%);
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.35;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(70rem 50rem at 50% 0%, #000 20%, transparent 78%);
+  }
+}
+
+@utility mono-nums {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Glass is for chrome only — header, chips, tabs. Never behind a price:
+   blurred translucency under small Persian numerals is a readability failure. */
+@utility glass {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--color-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}

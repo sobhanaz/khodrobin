@@ -35,3 +35,34 @@ def test_damage_vocabulary_is_unified():
     assert n._lookup(n.BODY_STATUS, "بدون رنگ") == "بدون رنگ"
     assert n._lookup(n.TRANSMISSION, "manual") == "دنده‌ای"
     assert n._lookup(n.TRANSMISSION, "اتومات") == "اتوماتیک"
+
+
+def test_khodro45_gearbox_is_read_out_of_the_trim_field():
+    # Khodro45 has no transmission field; it puts the gearbox in `trim`.
+    # Missing this silos every Khodro45 listing into its own cluster.
+    car = n.from_khodro45({
+        "car_properties": {
+            "brand": {"title": "جک", "title_en": "JAC"},
+            "model": {"title": "J4", "title_en": "J4"},
+            "trim": "اتوماتیک",
+            "year": "1402",
+        },
+        "car_specifications": {"klm": 40000},
+        "price": 1_500_000_000,
+        "city": {"title": "تهران"},
+        "slug": "ABC123",
+    })
+    assert car["transmission"] == "اتوماتیک"
+    assert car["price_toman"] == 1_500_000_000
+    assert car["year_jalali"] == 1402
+    assert car["mileage_km"] == 40000
+
+
+def test_khodro45_turbo_variant_still_reads_as_automatic():
+    car = n.from_khodro45({
+        "car_properties": {"brand": {"title_en": "MVM"}, "model": {"title_en": "X55"},
+                           "trim": "اتوماتیک توربو", "year": "1403"},
+        "car_specifications": {"klm": 10},
+        "price": 3_000_000_000, "city": {"title": "تهران"}, "slug": "X",
+    })
+    assert car["transmission"] == "اتوماتیک"

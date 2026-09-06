@@ -153,7 +153,42 @@ def from_hamrah(p: dict) -> dict:
     }
 
 
-ADAPTERS = {"divar": from_divar, "bama": from_bama, "hamrah": from_hamrah}
+def from_khodro45(p: dict) -> dict:
+    props = p.get("car_properties") or {}
+    specs = p.get("car_specifications") or {}
+    brand = props.get("brand") or {}
+    model = props.get("model") or {}
+    jalali, greg = split_year(props.get("year"))
+    return {
+        "title": f"{brand.get('title', '')} {model.get('title', '')}".strip() or None,
+        "brand_raw": brand.get("title_en") or brand.get("title"),
+        "model_raw": model.get("title_en") or model.get("title"),
+        "trim_raw": props.get("trim"),
+        "year_jalali": jalali,
+        "year_gregorian": greg,
+        "mileage_km": to_int(specs.get("klm")),
+        "price_toman": price_toman(p.get("price"), unit="toman"),
+        "colour": None,
+        "body_status": None,
+        # Khodro45 files the gearbox inside the trim field — «اتوماتیک»,
+        # «دنده‌ای», «اتوماتیک توربو». Left unparsed, every Khodro45 spec keys
+        # on gearbox="na" and can never join another source's cluster, which is
+        # exactly what happened when this source was first added.
+        "transmission": _lookup(TRANSMISSION, props.get("trim")),
+        "city": (p.get("city") or {}).get("title"),
+        "url": f"https://khodro45.com/used-car/{p.get('slug')}/" if p.get("slug") else "https://khodro45.com/used-car/",
+        # Unique to this source: whether the odometer was verified. None means
+        # "not checked", which is different from False ("checked, did not match").
+        "km_verified": specs.get("is_klm_matched"),
+    }
+
+
+ADAPTERS = {
+    "divar": from_divar,
+    "bama": from_bama,
+    "hamrah": from_hamrah,
+    "khodro45": from_khodro45,
+}
 
 
 def normalize(record: dict) -> dict:
