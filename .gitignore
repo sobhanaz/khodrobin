@@ -28,6 +28,7 @@ dist/
 
 # Data
 /data/raw/
+/services/api/data/index.json
 /data/*.sql
 /data/*.sql.gz
 !/data/seed/

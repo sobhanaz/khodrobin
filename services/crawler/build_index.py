@@ -1,0 +1,175 @@
+"""Turn raw listings into the index the API serves.
+
+The Persian parsing lives here and only here. Go could re-implement folding,
+alias matching and unit reconciliation, but then there would be two of them and
+they would drift. Instead this emits a plain JSON artifact and the Go API loads
+it — Python does the messy linguistic work, Go does the fast serving.
+
+Output shape:
+
+    {
+      "built_at": ...,
+      "stats": {...},
+      "specs": [
+        {
+          "key": "peugeot/207/base/mt/1404/0",
+          "brand": "peugeot", "brand_fa": "پژو",
+          "model": "207",     "model_fa": "۲۰۷",
+          "trim": null, "gearbox": "mt", "year": 1404, "km_bucket": 0,
+          "median_price": 2114000000,
+          "min_price": 1660000000, "max_price": 2470000000,
+          "offer_count": 10, "source_count": 3,
+          "offers": [ {...}, ... ]
+        }, ...
+      ]
+    }
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import statistics
+import sys
+from collections import defaultdict
+from datetime import datetime, timezone
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+
+from extract import GEARBOX, resolve, spec_key  # noqa: E402
+from normalize import normalize  # noqa: E402
+from plausibility import flags  # noqa: E402
+from vocab import BRANDS, MODELS  # noqa: E402
+
+SOURCE_FA = {"divar": "دیوار", "bama": "باما", "hamrah": "همراه‌مکانیک"}
+GEARBOX_FA = {"at": "اتوماتیک", "mt": "دنده‌ای", "na": None}
+
+
+def build(raw_path: pathlib.Path) -> dict:
+    rows = []
+    with raw_path.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    groups: dict[str, list[dict]] = defaultdict(list)
+    resolved = unresolved = 0
+    flagged = 0
+
+    for row in rows:
+        car = normalize(row)
+        res = resolve(car)
+        key = spec_key(car, res)
+        if not key or not car.get("price_toman"):
+            unresolved += 1
+            continue
+        resolved += 1
+        found = flags(car)
+        if found:
+            flagged += 1
+        groups[key].append({
+            "source": car["source"],
+            "source_fa": SOURCE_FA.get(car["source"], car["source"]),
+            "title": car["title"],
+            "price": car["price_toman"],
+            "mileage_km": car["mileage_km"],
+            "colour": car["colour"],
+            "body_status": car["body_status"],
+            "city": car["city"],
+            "url": car["url"],
+            "seen_at": car["fetched_at"],
+            "flags": found,
+            # Kept so the UI can show what the source actually said before we
+            # touched it. Trust is the product; hiding the input undermines it.
+            "raw_brand": car["brand_raw"],
+            "raw_model": car["model_raw"],
+            "raw_trim": car["trim_raw"],
+        })
+
+    specs = []
+    for key, offers in groups.items():
+        brand, model, trim, gearbox, year, bucket = key.split("/")
+        prices = sorted(o["price"] for o in offers)
+        median = int(statistics.median(prices))
+        for o in offers:
+            o["vs_median_pct"] = round(100 * (o["price"] - median) / median, 1)
+        specs.append({
+            "key": key,
+            "brand": brand,
+            "brand_fa": BRANDS.get(brand, (brand, ()))[0],
+            "model": model,
+            "model_fa": MODELS.get((brand, model), (model, ()))[0],
+            "trim": None if trim == "base" else trim,
+            "gearbox": gearbox,
+            "gearbox_fa": GEARBOX_FA.get(gearbox),
+            "year": int(year),
+            "km_bucket": None if bucket == "na" else int(bucket),
+            "offer_count": len(offers),
+            "source_count": len({o["source"] for o in offers}),
+            "median_price": median,
+            "min_price": prices[0],
+            "max_price": prices[-1],
+            "flag_count": sum(len(o["flags"]) for o in offers),
+            "offers": sorted(offers, key=lambda o: o["price"]),
+        })
+
+    # Biggest and most cross-source first: those are the ones worth looking at.
+    specs.sort(key=lambda s: (-s["source_count"], -s["offer_count"], s["key"]))
+
+    return {
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "stats": {
+            "listings": len(rows),
+            "indexed": resolved,
+            "unresolved": unresolved,
+            "resolved_pct": round(100 * resolved / max(len(rows), 1), 1),
+            "specs": len(specs),
+            "multi_source_specs": sum(1 for s in specs if s["source_count"] > 1),
+            "flagged_offers": flagged,
+            "sources": sorted({r["source"] for r in rows}),
+        },
+        # The Go API parses Persian queries against these same aliases. Exporting
+        # them keeps one source of truth: adding «سراتو» to vocab.py teaches both
+        # the crawler and the search box at once.
+        "vocab": {
+            "brands": [
+                {"slug": slug, "fa": display, "aliases": list(aliases)}
+                for slug, (display, aliases) in BRANDS.items()
+            ],
+            "models": [
+                {"brand": b, "slug": slug, "fa": display, "aliases": list(aliases)}
+                for (b, slug), (display, aliases) in MODELS.items()
+            ],
+        },
+        "specs": specs,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Build the served index from raw listings.")
+    ap.add_argument("--raw", default="../data/raw/listings.jsonl")
+    ap.add_argument("--out", default="../api/data/index.json")
+    args = ap.parse_args()
+
+    raw = pathlib.Path(args.raw)
+    if not raw.exists():
+        raw = pathlib.Path("../data/seed/listings.seed.jsonl")
+        print(f"no raw file; falling back to seed: {raw}", file=sys.stderr)
+
+    index = build(raw)
+    out = pathlib.Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    s = index["stats"]
+    print(f"listings={s['listings']} indexed={s['indexed']} ({s['resolved_pct']}%) "
+          f"specs={s['specs']} multi_source={s['multi_source_specs']} "
+          f"flagged={s['flagged_offers']} -> {out} "
+          f"({out.stat().st_size / 1e6:.1f} MB)", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

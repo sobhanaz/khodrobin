@@ -31,7 +31,7 @@ services:
     restart: unless-stopped
 
   api:
-    build: ./api
+    build: ./services/api
     environment:
       KHODROBIN_ADDR: ":8080"
     ports:

@@ -13,13 +13,13 @@ logs: ## Tail all logs
 	docker compose logs -f --tail=100
 
 test: ## Run every test suite
-	cd api && go test -race ./...
+	cd services/api && go test -race ./...
 
 lint: ## Vet and format-check
-	cd api && go vet ./... && test -z "$$(gofmt -l .)"
+	cd services/api && go vet ./... && test -z "$$(gofmt -l .)"
 
 fmt: ## Format
-	cd api && gofmt -w .
+	cd services/api && gofmt -w .
 
 build: ## Build the API binary
-	cd api && go build -o bin/api ./cmd/api
+	cd services/api && go build -o bin/api ./cmd/api

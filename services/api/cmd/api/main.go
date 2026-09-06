@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/sobhanaz/khodrobin/api/internal/health"
+	"github.com/sobhanaz/khodrobin/api/internal/index"
+	"github.com/sobhanaz/khodrobin/api/internal/server"
 )
 
 func main() {
@@ -33,9 +35,25 @@ func main() {
 		os.Exit(healthcheck(addr))
 	}
 
+	indexPath := os.Getenv("KHODROBIN_INDEX")
+	if indexPath == "" {
+		indexPath = "/data/index.json"
+	}
+	idx, err := index.Load(indexPath)
+	if err != nil {
+		// An API with no index has nothing to say. Reporting healthy while
+		// serving zero results would be worse than refusing to start.
+		log.Error("cannot load index", "path", indexPath, "err", err)
+		os.Exit(1)
+	}
+	log.Info("index loaded",
+		"path", indexPath, "specs", len(idx.Specs), "offers", idx.TotalOffers(),
+		"built_at", idx.BuiltAt)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health.Live)
 	mux.HandleFunc("GET /readyz", health.Ready)
+	mux.Handle("/", server.New(idx, log))
 
 	srv := &http.Server{
 		Addr:              addr,
