@@ -1,0 +1,50 @@
+{"q":"ارزون‌ترین پژو ۲۰۶ بالای مدل ۹۵","expect":{"brand":"peugeot","model":"206","year_min":1395,"priority":"cheapest"},"note":"canonical query"}
+{"q":"پژو ۲۰۶ تیپ ۵ مدل ۹۷","expect":{"brand":"peugeot","model":"206","year_min":1397,"year_max":1397},"note":"exact year"}
+{"q":"پراید مدل ۹۸","expect":{"brand":"pride","year_min":1398,"year_max":1398},"note":"brand + exact year"}
+{"q":"پراید ۱۳۱","expect":{"brand":"pride","model":"131"},"note":"numeric model"}
+{"q":"پراید صندوق‌دار","expect":{"brand":"pride","model":"sedan"},"note":"persian body-style model"}
+{"q":"کوییک دنده‌ای","expect":{"brand":"quik","gearbox":"mt"},"note":"gearbox from persian"}
+{"q":"کوییک آر","expect":{"brand":"quik","model":"r"},"note":"spelled-out latin letter"}
+{"q":"سمند سورن","expect":{"brand":"samand","model":"soren"},"note":"sub-model"}
+{"q":"سمند سورن زیر ۲ میلیارد","expect":{"brand":"samand","model":"soren","price_max":2000000000},"note":"billion shorthand"}
+{"q":"پژو ۲۰۷ اتوماتیک","expect":{"brand":"peugeot","model":"207","gearbox":"at"},"note":"gearbox at"}
+{"q":"پژو پارس","expect":{"brand":"peugeot","model":"pars"},"note":"persian model name"}
+{"q":"پژو ۴۰۵","expect":{"brand":"peugeot","model":"405"},"note":"numeric model"}
+{"q":"دنا پلاس","expect":{"brand":"dena","model":"plus"},"note":"two-word model"}
+{"q":"تارا اتوماتیک","expect":{"brand":"tara","gearbox":"at"},"note":"brand + gearbox"}
+{"q":"شاهین","expect":{"brand":"shahin"},"note":"brand only"}
+{"q":"تیبا ۲","expect":{"brand":"tiba","model":"2"},"note":"numbered variant"}
+{"q":"رانا پلاس","expect":{"brand":"rana","model":"plus"},"note":"variant"}
+{"q":"ساینا","expect":{"brand":"saina"},"note":"brand only"}
+{"q":"کیا سراتو","expect":{"brand":"kia","model":"cerato"},"note":"imported brand"}
+{"q":"هیوندای النترا","expect":{"brand":"hyundai","model":"elantra"},"note":"imported"}
+{"q":"تویوتا کرولا","expect":{"brand":"toyota","model":"corolla"},"note":"imported"}
+{"q":"تویوتا کرولا کراس","expect":{"brand":"toyota","model":"corolla-cross"},"note":"longer alias must win over corolla"}
+{"q":"ام وی ام X33","expect":{"brand":"mvm","model":"x33"},"note":"latin model code"}
+{"q":"چری تیگو ۷","expect":{"brand":"chery","model":"tiggo7"},"note":"persian digit in model"}
+{"q":"فونیکس آریزو ۶","expect":{"brand":"chery","model":"arrizo6"},"note":"brand rebrand alias"}
+{"q":"کی ام سی J7","expect":{"brand":"kmc","model":"j7"},"note":"spaced brand alias"}
+{"q":"جک S5","expect":{"brand":"jac","model":"s5"},"note":"short brand"}
+{"q":"بی وای دی","expect":{"brand":"byd"},"note":"multiword brand must not be shadowed"}
+{"q":"رنو تندر ۹۰","expect":{"brand":"renault","model":"l90"},"note":"alias maps to different slug"}
+{"q":"زامیاد Z24","expect":{"brand":"zamyad","model":"z24"},"note":"pickup"}
+{"q":"مزدا ۳","expect":{"brand":"mazda","model":"3"},"note":"single-digit model"}
+{"q":"بی ام و","expect":{"brand":"bmw"},"note":"spaced latin brand in persian"}
+{"q":"BMW","expect":{"brand":"bmw"},"note":"latin input"}
+{"q":"peugeot 206","expect":{"brand":"peugeot","model":"206"},"note":"finglish"}
+{"q":"pride 131","expect":{"brand":"pride","model":"131"},"note":"finglish"}
+{"q":"quik","expect":{"brand":"quik"},"note":"finglish brand"}
+{"q":"پژو ۲۰۶ زیر ۵۰۰ میلیون","expect":{"brand":"peugeot","model":"206","price_max":500000000},"note":"explicit million"}
+{"q":"زیر ۵۰۰","expect":{"price_max":500000000},"note":"bare number defaults to millions"}
+{"q":"تا ۲ میلیارد","expect":{"price_max":2000000000},"note":"billion"}
+{"q":"حداکثر ۸۰۰ میلیون","expect":{"price_max":800000000},"note":"synonym for ceiling"}
+{"q":"کمتر از ۱ میلیارد","expect":{"price_max":1000000000},"note":"synonym"}
+{"q":"پژو ۲۰۶ بالای ۹۵","expect":{"brand":"peugeot","model":"206","year_min":1395,"price_max":0},"note":"two-digit year must not read as a price"}
+{"q":"پراید بالای مدل ۹۰","expect":{"brand":"pride","year_min":1390},"note":"year floor with مدل"}
+{"q":"ماشین ارزون","expect":{"priority":"cheapest"},"note":"priority with no brand"}
+{"q":"کم کارکردترین","expect":{"priority":"lowkm"},"note":"priority lowkm"}
+{"q":"بهترین گزینه","expect":{"priority":"value"},"note":"priority value"}
+{"q":"یه ماشین خوب می‌خوام","expect":{"priority":"relevant"},"note":"vague query must still parse"}
+{"q":"پژو ۲۰۶ تيپ ۵","expect":{"brand":"peugeot","model":"206"},"note":"arabic yeh must fold to persian"}
+{"q":"پژو206","expect":{"brand":"peugeot","model":"206"},"note":"no space between brand and model"}
+{"q":"پژو پارس قیمت 2065000000","expect":{"brand":"peugeot","model":"pars"},"note":"206 must not match inside a price"}
