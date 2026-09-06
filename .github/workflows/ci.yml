@@ -77,14 +77,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: services/web/package-lock.json
+          cache: pnpm
+          cache-dependency-path: services/web/pnpm-lock.yaml
       - name: install
         working-directory: services/web
-        run: npm ci --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
       - name: build
         working-directory: services/web
-        run: npm run build
+        run: pnpm run build
