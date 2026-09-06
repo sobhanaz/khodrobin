@@ -233,3 +233,43 @@ A link the reviewer cannot open is not a partial failure. It looks identical to 
 **Choice.** CI runs `caddy validate` on every push. Config is code and gets the same gate the code gets.
 
 **Why it is worth a decision entry.** The failure mode is the interesting part: every health check was green while the thing in front of them was dead. Liveness probes on components tell you nothing about whether the system answers, which is exactly why the deploy ends with an external smoke test against the public URL rather than a `docker compose ps`.
+
+---
+
+## ۱۳. واحد مقایسه، «مشخصات» است نه یک خودروی مشخص — the unit of comparison
+
+**Context.** The original plan was to detect that three ads on three sites are the *same physical car* and show one row with three prices. I checked whether that was true of the data before building it.
+
+**The measurement.** It is not. In 1,875 listings the cross-source "collisions" were different cars at similar prices — a KMC X5 next to a Daiyun Y7. Physical duplicates across marketplaces are rare enough that no honest volume of crawling would surface them reliably.
+
+**Choice.** The unit is the **spec**: brand, model, trim, gearbox, year, mileage band — with every matching offer underneath and a real price distribution.
+
+**Why this is better, not a retreat.** It is what Torob's own card already is. Their page shows one *product* with «در X فروشگاه», not one physical object. A used car has no SKU, so building that key requires inferring `{brand, model, trim}` from three incompatible vocabularies — which is precisely «استخراج ویژگی‌های محصول» plus «تشخیص یکسان بودن کالاها», their two hardest listed problems.
+
+**Trade-off accepted.** The demo cannot claim "this exact car is cheaper over there". It claims something more useful and more defensible: "this spec has a median of X across N offers from M marketplaces, and this one is 12% under it".
+
+---
+
+## ۱۴. منبع چهارم: خودرو۴۵ — a fourth source, and why it changed nothing at first
+
+**Context.** Khodro45 was added as a fourth marketplace. Its API is the cleanest of the four: DRF pagination, canonical slugs, an explicit trim, and `is_klm_matched` — whether the odometer was verified, which no other source offers.
+
+**What happened.** Adding 240 listings moved multi-source clusters from 66 to 66. Exactly nothing.
+
+**The cause.** Khodro45 has no transmission field; it files the gearbox inside `trim` («اتوماتیک» ×67, «دنده‌ای» ×26). Since gearbox is part of the spec key, every Khodro45 listing keyed on `gearbox=na` and could never join another source's cluster. It silently formed a parallel universe of single-source specs.
+
+**With it parsed out:** 66 → 92 multi-source clusters, 2 → 14 with three or more sources, 39 clusters now including Khodro45.
+
+**The general lesson, and it is the second time:** Hamrah put the gearbox in the same field as the trim, and so does Khodro45. Any field that mixes two dimensions will silently silo the data rather than fail loudly. Worth a test each time, which is what `test_khodro45_gearbox_is_read_out_of_the_trim_field` is for.
+
+---
+
+## ۱۵. pnpm به جای npm — npm cannot resolve the Nuxt tree
+
+**Context.** The web image would not build: `npm ci` rejected a lockfile `npm install` had just written.
+
+**The root cause is upstream of that.** `npm install --package-lock-only` itself crashes with `Cannot read properties of null (reading 'edgesOut')`. Bisected: it reproduces with `nuxt + vue + vue-router` alone — no Tailwind, no TypeScript — under npm 10 in `node:22-alpine` and npm 11 locally. It is an arborist bug, not a dependency conflict we can pin our way out of.
+
+**Choice.** pnpm, which resolves the same `package.json` in 1.4 seconds, is what Nuxt recommends, and gives CI real reproducibility through `--frozen-lockfile`.
+
+**Detail worth keeping.** The lockfile is generated inside `node:22-alpine`, the same image that installs from it. Generating it with a different runtime than the one that consumes it is how the original mismatch appeared in the first place.
