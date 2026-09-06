@@ -19,13 +19,13 @@ import (
 var uiFS embed.FS
 
 type Server struct {
-	idx *index.Index
-	log *slog.Logger
-	mux *http.ServeMux
+	store *index.Store
+	log   *slog.Logger
+	mux   *http.ServeMux
 }
 
-func New(idx *index.Index, log *slog.Logger) *Server {
-	s := &Server{idx: idx, log: log, mux: http.NewServeMux()}
+func New(store *index.Store, log *slog.Logger) *Server {
+	s := &Server{store: store, log: log, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -64,11 +64,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parseStart := time.Now()
-	in := search.ParseQuery(q, s.idx.Vocab)
+	idx := s.store.Get()
+	in := search.ParseQuery(q, idx.Vocab)
 	parseMs := time.Since(parseStart).Seconds() * 1000
 
 	rankStart := time.Now()
-	res := search.Run(s.idx, in, mode, limit)
+	res := search.Run(idx, in, mode, limit)
 	rankMs := time.Since(rankStart).Seconds() * 1000
 
 	totalMs := time.Since(start).Seconds() * 1000
@@ -90,9 +91,10 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimPrefix(r.PathValue("key"), "/")
-	for i := range s.idx.Specs {
-		if s.idx.Specs[i].Key == key {
-			writeJSON(w, http.StatusOK, s.idx.Specs[i])
+	idx := s.store.Get()
+	for i := range idx.Specs {
+		if idx.Specs[i].Key == key {
+			writeJSON(w, http.StatusOK, idx.Specs[i])
 			return
 		}
 	}
@@ -100,10 +102,11 @@ func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	idx := s.store.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"stats":     s.idx.Stats,
-		"built_at":  s.idx.BuiltAt,
-		"loaded_at": s.idx.LoadedAt,
-		"offers":    s.idx.TotalOffers(),
+		"stats":     idx.Stats,
+		"built_at":  idx.BuiltAt,
+		"loaded_at": idx.LoadedAt,
+		"offers":    idx.TotalOffers(),
 	})
 }

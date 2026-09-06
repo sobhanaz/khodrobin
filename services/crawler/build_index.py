@@ -161,7 +161,13 @@ def main() -> int:
     index = build(raw)
     out = pathlib.Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    # Write-then-rename. The API watches this path's mtime and reloads on
+    # change, so it must never observe a partially written file. rename() is
+    # atomic within a filesystem.
+    tmp = out.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(out)
 
     s = index["stats"]
     print(f"listings={s['listings']} indexed={s['indexed']} ({s['resolved_pct']}%) "

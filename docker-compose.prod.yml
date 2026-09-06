@@ -19,6 +19,9 @@ services:
     image: ghcr.io/${GHCR_OWNER}/khodrobin-api:${TAG:-latest}
     environment:
       KHODROBIN_ADDR: ":8080"
+    volumes:
+      # Read-only: the API observes the index, the crawler owns it.
+      - indexdata:/data:ro
     expose:
       - "8080"
     depends_on:
@@ -30,6 +33,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    restart: unless-stopped
+
+  crawler:
+    image: ghcr.io/${GHCR_OWNER}/khodrobin-crawler:${TAG:-latest}
+    environment:
+      CRAWL_INTERVAL_SECONDS: ${CRAWL_INTERVAL_SECONDS:-10800}
+      CRAWL_CITIES: ${CRAWL_CITIES:-tehran mashhad isfahan shiraz tabriz}
+      CRAWL_PAGES: ${CRAWL_PAGES:-30}
+    volumes:
+      - indexdata:/data
     restart: unless-stopped
 
   postgres:
@@ -60,6 +73,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  indexdata:
   pgdata:
   redisdata:
   caddy_data:

@@ -39,11 +39,23 @@ func main() {
 	if indexPath == "" {
 		indexPath = "/data/index.json"
 	}
+	// The live index lives on a volume the crawler writes to. On a cold start
+	// that volume is empty, so fall back to the snapshot baked into the image:
+	// the site is never blank, it is just as fresh as the last release.
+	fallback := os.Getenv("KHODROBIN_INDEX_FALLBACK")
+	if fallback == "" {
+		fallback = "/seed/index.json"
+	}
 	idx, err := index.Load(indexPath)
+	if err != nil {
+		log.Warn("live index unavailable; falling back to the baked snapshot",
+			"path", indexPath, "err", err)
+		idx, err = index.Load(fallback)
+	}
 	if err != nil {
 		// An API with no index has nothing to say. Reporting healthy while
 		// serving zero results would be worse than refusing to start.
-		log.Error("cannot load index", "path", indexPath, "err", err)
+		log.Error("cannot load any index", "live", indexPath, "fallback", fallback, "err", err)
 		os.Exit(1)
 	}
 	log.Info("index loaded",
@@ -53,7 +65,13 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health.Live)
 	mux.HandleFunc("GET /readyz", health.Ready)
-	mux.Handle("/", server.New(idx, log))
+	// The crawler republishes the index on a schedule into a shared volume;
+	// the API picks it up without a restart.
+	store := index.NewStore(indexPath, idx, log)
+	stopWatch := make(chan struct{})
+	go store.Watch(30*time.Second, stopWatch)
+
+	mux.Handle("/", server.New(store, log))
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -76,6 +94,7 @@ func main() {
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Error("graceful shutdown failed", "err", err)
 		}
+		close(stopWatch)
 		close(idle)
 	}()
 
