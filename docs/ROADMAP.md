@@ -470,6 +470,8 @@ You have already shipped phone-OTP + JWT + refresh in the Digikala clone. Reuse 
 
 **You have already proven this path.** SorinFlow runs live at `sorinflow.com` on a single-node k3s cluster on an Iranian VPS behind Traefik, with GitHub Actions deploying to it. Reuse that pipeline shape rather than inventing a new one — and reuse the VPS if it has headroom.
 
+> **Updated (decision ۹):** with a single VPS available, the box goes in **Frankfurt** and runs the whole product; the crawler runs on a residential Iranian IP and pushes to an authenticated `/ingest`. The rest of this section still applies — the reachability test from Iranian mobile data is unchanged and non-negotiable.
+
 **Recommended shape:**
 
 ```

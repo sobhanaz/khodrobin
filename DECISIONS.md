@@ -152,3 +152,32 @@ The crawler is the only component that needs an Iranian IP, and it needs nothing
 **To verify on day 1.** Whether Divar and Bama actually serve a Frankfurt datacenter IP acceptably. `divar.ir` is reachable internationally; the open question is rate-limiting and CAPTCHA behaviour for foreign ASNs under sustained use. If they behave, collapse to a single Frankfurt box and delete this decision — one machine beats two. Do not assume it either way; measure it.
 
 **Fallback if the model APIs stay out of reach.** Ollama with Qwen 2.5 7B, already a one-line provider switch. The product must work with a local model, and that is a design constraint, not a contingency.
+
+---
+
+## ۹. یک سرور، در فرانکفورت — One VPS, and it goes in Frankfurt
+
+*Supersedes the two-box topology in decision ۸. The constraints there still hold; this is how they are satisfied with one machine.*
+
+**Context.** One VPS is available, not two. Decision ۸ named three requirements that pull apart: the crawler wants an Iranian IP, the model APIs refuse Iranian IPs, and the reviewer opens the demo from Tehran.
+
+**The observation that resolves it.** The crawler does not need to be on a server at all. It is a scheduled batch job that talks to three websites and pushes JSONL. It can run on my own machine in Iran — on a **residential** Iranian IP, which is a *better* crawling position than any Iranian datacenter IP, and far better than a foreign one.
+
+**Choice.** The single VPS goes in **Frankfurt** and runs the entire product: Nuxt, the Go API, the FastAPI AI service, PostgreSQL, Elasticsearch, Redis, Caddy. The crawler runs locally in Iran on a schedule and pushes batches to an authenticated `/ingest` endpoint.
+
+**Why Frankfurt and not Tehran.**
+
+| | Frankfurt | Tehran |
+|---|---|---|
+| Reachable from Iran for the reviewer | ✅ a VPS you control geo-blocks nobody | ✅ |
+| Model APIs (OpenAI / Anthropic / Gemini) | ✅ | ❌ blocked on their side; unfixable from ours |
+| Crawling Iranian sources | handled from the Iranian residential IP | ✅ |
+| Cost for 4 vCPU / 8 GB | ~€8/mo | more, for less |
+
+Elasticsearch alone wants 1–2 GB, so 8 GB is the floor, not the target. Hetzner **CX32** or equivalent. Iranian resellers sell European boxes payable in Rial if a foreign card is a problem.
+
+**Trade-off accepted.** Ingest depends on my machine being online. Three mitigations, all of which the product needs anyway: seed data ships in the repo so a cold visit always works; every record carries `last_seen_at` and the UI shows staleness honestly rather than pretending; and a staleness alert fires if no batch lands within N hours. The demo degrades toward "this data is 6 hours old" — it never shows an empty page.
+
+**The honest framing for the video.** Not "I couldn't afford two servers", but: «کراولر روی IP خانگی ایران اجراست چون منابع ایرانی به IP دیتاسنتر خارجی جواب نمی‌دن، و اپ روی فرانکفورت چون API مدل‌ها از ایران در دسترس نیست. تنها چیزی که بین این دو رد و بدل می‌شه یک ingest احراز‌هویت‌شده‌ست.» That is a true constraint, met with a design, and every Iranian engineer watching will recognise it.
+
+**Still to measure on day 1.** Whether Divar and Bama tolerate the Frankfurt IP under sustained use. If they do, the crawler moves onto the VPS and the local dependency disappears entirely. Measure before assuming — in either direction.
