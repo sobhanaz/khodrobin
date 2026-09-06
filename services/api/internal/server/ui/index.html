@@ -61,7 +61,8 @@ header{position:sticky;top:0;z-index:50;border-bottom:1px solid var(--line);
 @keyframes pulse{0%,100%{box-shadow:0 0 0 4px var(--accent-dim)}50%{box-shadow:0 0 0 9px transparent}}
 .tag{font-family:var(--mono);font-size:.66rem;color:var(--ink-3);border:1px solid var(--line);padding:3px 8px;border-radius:99px;letter-spacing:.04em}
 .spacer{flex:1}
-.head-stat{font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
+.head-stat{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:820px){.head-stat{display:none}}
 .head-stat b{color:var(--good);font-weight:500}
 
 /* ---------- hero ---------- */
@@ -136,11 +137,21 @@ h1 em{font-style:normal;color:var(--accent)}
 
 /* price spread bar: the distribution *is* the product */
 .spread{padding:0 19px 15px}
-.track{position:relative;height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden}
-.fill{position:absolute;inset-block:0;background:linear-gradient(90deg,var(--good),var(--warn),var(--accent));border-radius:99px;
-  transform-origin:right center;animation:grow .7s var(--ease) both}
+/* Each offer is a tick at its real position in the range; the median is the
+   tall marker. The bar is the price distribution, not a progress indicator. */
+.track{position:relative;height:26px;direction:ltr}
+.axis{position:absolute;inset-inline:0;top:12px;height:3px;border-radius:99px;
+  background:linear-gradient(90deg,var(--good),var(--warn),var(--accent));opacity:.5;
+  transform-origin:left center;animation:grow .6s var(--ease) both}
 @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-.ends{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--mono);font-size:.68rem;color:var(--ink-3)}
+.tick{position:absolute;top:7px;width:3px;height:13px;border-radius:99px;background:var(--ink-2);
+  transform:translateX(-50%);opacity:0;animation:tick .4s var(--ease) forwards}
+.tick.med{top:2px;height:23px;width:3px;background:var(--ink);box-shadow:0 0 0 3px var(--bg-2)}
+@keyframes tick{to{opacity:.85}}
+.ends{display:flex;justify-content:space-between;margin-top:2px;font-family:var(--mono);font-size:.68rem;color:var(--ink-3);direction:ltr}
+.ends span{display:flex;flex-direction:column}
+.ends .cap{font-family:Vazirmatn,sans-serif;font-size:.64rem;color:var(--ink-3);opacity:.75}
+.ends .hi{align-items:flex-end}
 
 .acts{display:flex;gap:8px;padding:0 19px 15px;flex-wrap:wrap}
 .act{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:.78rem;
@@ -247,6 +258,8 @@ footer .mono{color:var(--ink-2)}
 <script>
 const $ = s => document.querySelector(s);
 const FA = n => new Intl.NumberFormat('fa-IR').format(n);
+// Years are identifiers, not quantities: «۱۴۰۴», never «۱٬۴۰۴».
+const FAY = n => new Intl.NumberFormat('fa-IR',{useGrouping:false}).format(n);
 const LTR = n => new Intl.NumberFormat('en-US').format(n);
 
 const MODES = [
@@ -300,8 +313,8 @@ function renderIntent(intent){
   const parts=[];
   if(intent.brand_fa) parts.push(['برند',intent.brand_fa,'brand']);
   if(intent.model_fa) parts.push(['مدل',intent.model_fa,'model']);
-  if(intent.year_min) parts.push(['از سال',FA(intent.year_min),'year_min']);
-  if(intent.year_max && intent.year_max!==intent.year_min) parts.push(['تا سال',FA(intent.year_max),'year_max']);
+  if(intent.year_min) parts.push(['از سال',FAY(intent.year_min),'year_min']);
+  if(intent.year_max && intent.year_max!==intent.year_min) parts.push(['تا سال',FAY(intent.year_max),'year_max']);
   if(intent.price_max) parts.push(['حداکثر',FA(Math.round(intent.price_max/1e6))+' م','price_max']);
   if(intent.price_min) parts.push(['حداقل',FA(Math.round(intent.price_min/1e6))+' م','price_min']);
   if(intent.gearbox) parts.push(['گیربکس',intent.gearbox==='at'?'اتوماتیک':'دنده‌ای','gearbox']);
@@ -348,12 +361,18 @@ function card(s,i){
   const km = s.km_bucket==null ? '' : `<span class="fact n">${LTR(s.km_bucket*25)}–${LTR((s.km_bucket+1)*25)} هزار کیلومتر</span>`;
   const srcs=new Set(s.offers.map(o=>o.source_fa));
   const badges=['دیوار','باما','همراه‌مکانیک'].map(n=>`<span class="src${srcs.has(n)?' on':''}">${n}</span>`).join('');
-  const spreadPct = s.max_price>s.min_price ? 100 : 60;
+  // Position every offer on the min..max axis. A single-price spec collapses
+  // to one tick in the middle rather than pretending to have a range.
+  const span = s.max_price - s.min_price;
+  const at = p => span > 0 ? ((p - s.min_price) / span) * 100 : 50;
+  const ticks = s.offers.map((o,n)=>
+    `<span class="tick" style="left:${at(o.price).toFixed(2)}%;animation-delay:${Math.min(i*45,400)+160+n*40}ms"></span>`).join('')
+    + `<span class="tick med" style="left:${at(s.median_price).toFixed(2)}%;animation-delay:${Math.min(i*45,400)+300}ms"></span>`;
 
   el.innerHTML=`
     <div class="row">
       <div>
-        <div class="title">${s.brand_fa} ${s.model_fa}${trim} — مدل ${FA(s.year)}${gb}</div>
+        <div class="title">${s.brand_fa} ${s.model_fa}${trim} — مدل ${FAY(s.year)}${gb}</div>
         <div class="facts">
           <span class="fact n">${FA(s.offer_count)} آگهی</span>
           <span class="fact n">${FA(s.source_count)} منبع</span>
@@ -368,8 +387,11 @@ function card(s,i){
       </div>
     </div>
     <div class="spread">
-      <div class="track"><span class="fill" style="width:${spreadPct}%;animation-delay:${Math.min(i*45,400)+120}ms"></span></div>
-      <div class="ends"><span>${LTR(s.min_price)}</span><span>${LTR(s.max_price)}</span></div>
+      <div class="track"><span class="axis" style="animation-delay:${Math.min(i*45,400)+120}ms"></span>${ticks}</div>
+      <div class="ends">
+        <span><span class="cap">ارزان‌ترین</span>${LTR(s.min_price)}</span>
+        <span class="hi"><span class="cap">گران‌ترین</span>${LTR(s.max_price)}</span>
+      </div>
     </div>
     <div class="acts">
       <button class="act" type="button" aria-expanded="false" data-t="offers">${FA(s.offer_count)} آگهی</button>
