@@ -1,0 +1,18 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The reviewer may open this from Iran on a phone; keep the surface small
+	# and the headers honest.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	handle /healthz  { reverse_proxy api:8080 }
+	handle /readyz   { reverse_proxy api:8080 }
+	handle /api/*    { reverse_proxy api:8080 }
+	handle           { reverse_proxy api:8080 }
+}
