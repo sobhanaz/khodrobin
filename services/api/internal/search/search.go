@@ -101,10 +101,14 @@ func ParseQuery(q string, vocab index.Vocab) Intent {
 			}
 		}
 	}
-	if in.Brand != "" {
+	// A model name is usually enough to imply its brand: «۲۰۶ می‌خوام» names no
+	// marque but only Peugeot makes a 206. When no brand matched, search every
+	// model and adopt the brand of whatever wins.
+	searchAllModels := in.Brand == ""
+	{
 		bestModel := ""
 		for _, m := range vocab.Models {
-			if m.Brand != in.Brand {
+			if !searchAllModels && m.Brand != in.Brand {
 				continue
 			}
 			for _, a := range m.Aliases {
@@ -120,6 +124,14 @@ func ParseQuery(q string, vocab index.Vocab) Intent {
 				}
 				if hit && len(fa) > len(bestModel) {
 					bestModel, in.Model, in.ModelFa = fa, m.Slug, m.Fa
+					if searchAllModels {
+						in.Brand = m.Brand
+						for _, b := range vocab.Brands {
+							if b.Slug == m.Brand {
+								in.BrandFa = b.Fa
+							}
+						}
+					}
 				}
 			}
 		}
@@ -184,40 +196,70 @@ func containsNumberToken(text, num string) bool {
 
 // priceScale converts a shorthand number to tomans. «زیر ۵۰۰» is 500 million;
 // «۲ میلیارد» is 2 billion; a fully written 500000000 is already tomans.
-func priceScale(n int64, unit string) int64 {
+//
+// The value is a float so «۱.۵ میلیارد» works — parsing it as an integer
+// silently truncated to 1 and produced a ceiling of one million tomans, which
+// matches no car ever sold.
+func priceScale(n float64, unit string) int64 {
 	switch {
 	case strings.Contains(unit, "میلیارد"):
-		return n * billion
+		return int64(n * billion)
 	case strings.Contains(unit, "میلیون"):
-		return n * million
+		return int64(n * million)
 	case n < 10_000:
-		return n * million
+		return int64(n * million)
 	default:
-		return n
+		return int64(n)
 	}
 }
 
-var priceCeilRe = regexp.MustCompile(`(?:زیر|تا|حداکثر|کمتر از)\s*(\d+)\s*(میلیارد|میلیون)?`)
-var priceFloorRe = regexp.MustCompile(`(?:بالای|بیشتر از|از)\s*(\d+)\s*(میلیارد|میلیون)`)
+// Numbers may carry a decimal part: «۱.۵ میلیارد» is 1,500,000,000.
+var priceRangeRe = regexp.MustCompile(`بین\s*(\d+(?:\.\d+)?)\s*(?:میلیارد|میلیون)?\s*(?:تا|و)\s*(\d+(?:\.\d+)?)\s*(میلیارد|میلیون)?`)
+var priceCeilRe = regexp.MustCompile(`(?:زیر|تا|حداکثر|کمتر از)\s*(\d+(?:\.\d+)?)\s*(میلیارد|میلیون)?`)
+var priceFloorRe = regexp.MustCompile(`(?:بالای|بیشتر از|از)\s*(\d+(?:\.\d+)?)\s*(میلیارد|میلیون)`)
+
+// looksLikeAYear reports whether a bare number in a price position is really a
+// model year. «بالای ۹۵» is 1395, not 95 million tomans.
+func looksLikeAYear(n float64) bool {
+	if n != float64(int64(n)) {
+		return false // decimals are never years
+	}
+	i := int64(n)
+	return (i >= 60 && i <= 99) || (i >= 1300 && i <= 1450) || (i >= 1990 && i <= 2100)
+}
 
 func parsePrice(text string, in *Intent) {
+	// «بین ۵۰۰ تا ۸۰۰ میلیون» — a range binds both ends, and its "تا" would
+	// otherwise be read as a bare ceiling, so it runs first and wins.
+	if m := priceRangeRe.FindStringSubmatch(text); m != nil {
+		lo, errLo := strconv.ParseFloat(m[1], 64)
+		hi, errHi := strconv.ParseFloat(m[2], 64)
+		if errLo == nil && errHi == nil && lo > 0 && hi > 0 && !looksLikeAYear(lo) {
+			// A unit written once at the end applies to both numbers.
+			in.PriceMin = priceScale(lo, m[3])
+			in.PriceMax = priceScale(hi, m[3])
+			return
+		}
+	}
 	if m := priceCeilRe.FindStringSubmatch(text); m != nil {
-		if n, err := strconv.ParseInt(m[1], 10, 64); err == nil && n > 0 {
-			// «زیر ۹۵» next to a model year is a year bound, not a price.
-			if !(n >= 60 && n <= 99) && !(n >= 1300 && n <= 1450) {
-				in.PriceMax = priceScale(n, m[2])
-			}
+		if n, err := strconv.ParseFloat(m[1], 64); err == nil && n > 0 && !looksLikeAYear(n) {
+			in.PriceMax = priceScale(n, m[2])
 		}
 	}
 	if m := priceFloorRe.FindStringSubmatch(text); m != nil {
-		if n, err := strconv.ParseInt(m[1], 10, 64); err == nil && n > 0 {
+		if n, err := strconv.ParseFloat(m[1], 64); err == nil && n > 0 {
 			in.PriceMin = priceScale(n, m[2])
 		}
 	}
 }
 
+var yearRangeRe = regexp.MustCompile(`مدل\s*(\d{2,4})\s*(?:تا|الی)\s*(\d{2,4})`)
 var yearFloorRe = regexp.MustCompile(`(?:بالای|از)\s*(?:مدل\s*)?(\d{2,4})`)
 var yearExactRe = regexp.MustCompile(`مدل\s*(\d{2,4})`)
+
+// A four-digit Gregorian year stands on its own: «کیا سراتو ۲۰۱۷» never says
+// «مدل», and 2017 cannot be anything else.
+var yearBareGregorianRe = regexp.MustCompile(`(?:^|\s)(19\d{2}|20\d{2})(?:\s|$)`)
 
 // normalizeYear turns «۹۶» into 1396 and leaves 1396 alone. Two-digit years
 // are how Iranians actually write model years.
@@ -236,6 +278,18 @@ func normalizeYear(n int) int {
 }
 
 func parseYear(text string, in *Intent) {
+	// «مدل ۹۰ تا ۹۵» binds both ends and must beat the floor and exact forms.
+	if m := yearRangeRe.FindStringSubmatch(text); m != nil {
+		lo, errLo := strconv.Atoi(m[1])
+		hi, errHi := strconv.Atoi(m[2])
+		if errLo == nil && errHi == nil {
+			a, b := normalizeYear(lo), normalizeYear(hi)
+			if a > 0 && b > 0 && a <= b {
+				in.YearMin, in.YearMax = a, b
+				return
+			}
+		}
+	}
 	if m := yearFloorRe.FindStringSubmatch(text); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil {
 			if y := normalizeYear(n); y > 0 {
@@ -245,6 +299,14 @@ func parseYear(text string, in *Intent) {
 		}
 	}
 	if m := yearExactRe.FindStringSubmatch(text); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			if y := normalizeYear(n); y > 0 {
+				in.YearMin, in.YearMax = y, y
+				return
+			}
+		}
+	}
+	if m := yearBareGregorianRe.FindStringSubmatch(text); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil {
 			if y := normalizeYear(n); y > 0 {
 				in.YearMin, in.YearMax = y, y

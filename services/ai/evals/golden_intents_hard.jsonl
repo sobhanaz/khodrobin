@@ -1,0 +1,30 @@
+{"q":"دنبال یه پراید زیر ۳۰۰ میلیون میگردم","expect":{"brand":"pride","price_max":300000000},"note":"conversational framing"}
+{"q":"۲۰۶ می‌خوام","expect":{"brand":"peugeot","model":"206"},"note":"model without brand"}
+{"q":"سمند ال ایکس","expect":{"brand":"samand","model":"lx"},"note":"latin trim spelled in persian"}
+{"q":"پژو ۲۰۶ تیپ ۲ مدل ۹۰ تا ۹۵","expect":{"brand":"peugeot","model":"206","year_min":1390,"year_max":1395},"note":"year range"}
+{"q":"ماشین بین ۵۰۰ تا ۸۰۰ میلیون","expect":{"price_min":500000000,"price_max":800000000},"note":"price range"}
+{"q":"پراید یا تیبا","expect":{"brand":"pride"},"note":"disjunction; first brand is acceptable"}
+{"q":"206 tip 5","expect":{"brand":"peugeot","model":"206"},"note":"full finglish incl. trim"}
+{"q":"پژو206تیپ5","expect":{"brand":"peugeot","model":"206"},"note":"no spaces at all"}
+{"q":"ارزانترین کوییک","expect":{"brand":"quik","priority":"cheapest"},"note":"ارزانترین without zwnj"}
+{"q":"کم کارکرد ترین پژو","expect":{"brand":"peugeot","priority":"lowkm"},"note":"spaced superlative"}
+{"q":"شاسی بلند زیر ۲ میلیارد","expect":{"price_max":2000000000},"note":"body style we do not model; price must still parse"}
+{"q":"پراید تهران","expect":{"brand":"pride"},"note":"city mentioned; must not break the brand"}
+{"q":"پژو ۲۰۷ پانوراما","expect":{"brand":"peugeot","model":"207"},"note":"trim word we know"}
+{"q":"دنا معمولی","expect":{"brand":"dena","model":"base"},"note":"base variant said explicitly"}
+{"q":"تیبا هاچبک","expect":{"brand":"tiba"},"note":"body style on a brand that has no such model"}
+{"q":"کیا سراتو ۲۰۱۷","expect":{"brand":"kia","model":"cerato","year_min":1396,"year_max":1396},"note":"gregorian year must convert"}
+{"q":"مزدا 3 مدل 2015","expect":{"brand":"mazda","model":"3","year_min":1394,"year_max":1394},"note":"latin digits, gregorian"}
+{"q":"پژو پارس ELX","expect":{"brand":"peugeot","model":"pars"},"note":"latin trim"}
+{"q":"رنو ساندرو استپ وی","expect":{"brand":"renault","model":"sandero"},"note":"extra words after model"}
+{"q":"هیوندای i20","expect":{"brand":"hyundai"},"note":"model not in vocabulary"}
+{"q":"بنز E200","expect":{"brand":"benz"},"note":"brand only, model unknown"}
+{"q":"ماشین زیر ۱۰۰ میلیون","expect":{"price_max":100000000},"note":"below any real car price"}
+{"q":"خودرو تا 1.5 میلیارد","expect":{"price_max":1500000000},"note":"decimal billions"}
+{"q":"پژو ۴۰۵ دوگانه سوز","expect":{"brand":"peugeot","model":"405"},"note":"fuel type after model"}
+{"q":"سمند صفر کیلومتر","expect":{"brand":"samand"},"note":"mileage condition we do not model"}
+{"q":"پراید بدون رنگ","expect":{"brand":"pride"},"note":"body condition we do not model"}
+{"q":"ارزون ترین ماشین","expect":{"priority":"cheapest"},"note":"spaced ارزون ترین"}
+{"q":"چری تیگو 8 پرو مکس","expect":{"brand":"chery","model":"tiggo8"},"note":"long trim tail"}
+{"q":"پژو۲۰۶","expect":{"brand":"peugeot","model":"206"},"note":"persian digits, no space"}
+{"q":"quick R","expect":{"brand":"quik","model":"r"},"note":"misspelled finglish brand"}

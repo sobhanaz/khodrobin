@@ -16,7 +16,7 @@ BRANDS: dict[str, tuple[str, tuple[str, ...]]] = {
     "peugeot":  ("پژو",        ("peugeot", "پژو", "پيژو")),
     "samand":   ("سمند",       ("samand", "سمند")),
     "tiba":     ("تیبا",       ("tiba", "تیبا")),
-    "quik":     ("کوییک",      ("quik", "quick", "کوییک", "کوئیک")),
+    "quik":     ("کوییک",      ("quik", "quick", "کوییک", "کوئیک", "کویک")),
     "dena":     ("دنا",        ("dena", "دنا")),
     "tara":     ("تارا",       ("tara", "تارا")),
     "shahin":   ("شاهین",      ("shahin", "شاهین")),
@@ -73,7 +73,7 @@ MODELS: dict[tuple[str, str], tuple[str, tuple[str, ...]]] = {
     ("tiba", "2"):         ("تیبا ۲", ("tiba 2", "تیبا 2", "تیبا ۲", "تیبا۲")),
     ("tiba", "1"):         ("تیبا", ("tiba", "تیبا")),
 
-    ("quik", "r"):         ("کوییک R", ("quik r", "کوییک r", "کوییک آر")),
+    ("quik", "r"):         ("کوییک R", ("quik r", "quick r", "کوییک r", "کوییک آر")),
     ("quik", "s"):         ("کوییک S", ("quik s", "کوییک s")),
     ("quik", "base"):      ("کوییک", ("quik", "کوییک")),
 

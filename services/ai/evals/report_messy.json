@@ -1,0 +1,84 @@
+{
+  "total": 12,
+  "passed": 9,
+  "errored": 0,
+  "accuracy_pct": 75.0,
+  "threshold_pct": 85.0,
+  "per_field": {
+    "brand": {
+      "correct": 10,
+      "graded": 11,
+      "pct": 90.9
+    },
+    "model": {
+      "correct": 9,
+      "graded": 9,
+      "pct": 100.0
+    },
+    "price_max": {
+      "correct": 0,
+      "graded": 1,
+      "pct": 0.0
+    },
+    "year_min": {
+      "correct": 0,
+      "graded": 1,
+      "pct": 0.0
+    },
+    "year_max": {
+      "correct": 0,
+      "graded": 1,
+      "pct": 0.0
+    }
+  },
+  "latency_ms": {
+    "p50": 1.5,
+    "p95": 5.3
+  },
+  "intent_sources": {
+    "rules": 12
+  },
+  "failures": [
+    {
+      "q": "کویک",
+      "note": "کویک without the doubled yeh",
+      "error": null,
+      "mismatches": [
+        {
+          "field": "brand",
+          "want": "quik",
+          "got": ""
+        }
+      ]
+    },
+    {
+      "q": "ماشین زیر پونصد میلیون",
+      "note": "number written as a word",
+      "error": null,
+      "mismatches": [
+        {
+          "field": "price_max",
+          "want": 500000000,
+          "got": 0
+        }
+      ]
+    },
+    {
+      "q": "پژو 206 مدل نود و پنج",
+      "note": "year written as words",
+      "error": null,
+      "mismatches": [
+        {
+          "field": "year_min",
+          "want": 1395,
+          "got": 0
+        },
+        {
+          "field": "year_max",
+          "want": 1395,
+          "got": 0
+        }
+      ]
+    }
+  ]
+}

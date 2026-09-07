@@ -1,0 +1,52 @@
+{
+  "total": 50,
+  "passed": 50,
+  "errored": 0,
+  "accuracy_pct": 100.0,
+  "threshold_pct": 85.0,
+  "per_field": {
+    "brand": {
+      "correct": 42,
+      "graded": 42,
+      "pct": 100.0
+    },
+    "model": {
+      "correct": 32,
+      "graded": 32,
+      "pct": 100.0
+    },
+    "year_min": {
+      "correct": 5,
+      "graded": 5,
+      "pct": 100.0
+    },
+    "priority": {
+      "correct": 5,
+      "graded": 5,
+      "pct": 100.0
+    },
+    "year_max": {
+      "correct": 2,
+      "graded": 2,
+      "pct": 100.0
+    },
+    "gearbox": {
+      "correct": 3,
+      "graded": 3,
+      "pct": 100.0
+    },
+    "price_max": {
+      "correct": 7,
+      "graded": 7,
+      "pct": 100.0
+    }
+  },
+  "latency_ms": {
+    "p50": 192.3,
+    "p95": 326.8
+  },
+  "intent_sources": {
+    "rules": 50
+  },
+  "failures": []
+}

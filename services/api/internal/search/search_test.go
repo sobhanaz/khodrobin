@@ -12,11 +12,13 @@ func testVocab() index.Vocab {
 			{Slug: "peugeot", Fa: "پژو", Aliases: []string{"peugeot", "پژو"}},
 			{Slug: "pride", Fa: "پراید", Aliases: []string{"pride", "پراید"}},
 			{Slug: "byd", Fa: "بی‌وای‌دی", Aliases: []string{"byd", "بی وای دی"}},
+			{Slug: "kia", Fa: "کیا", Aliases: []string{"kia", "کیا"}},
 		},
 		Models: []index.Alias{
 			{Brand: "peugeot", Slug: "206", Fa: "۲۰۶", Aliases: []string{"206", "۲۰۶"}},
 			{Brand: "peugeot", Slug: "206-sd", Fa: "۲۰۶ SD", Aliases: []string{"206 sd", "۲۰۶ اس دی"}},
 			{Brand: "peugeot", Slug: "405", Fa: "۴۰۵", Aliases: []string{"405"}},
+			{Brand: "kia", Slug: "cerato", Fa: "سراتو", Aliases: []string{"cerato", "سراتو"}},
 		},
 	}
 }
@@ -165,5 +167,58 @@ func TestBreakdownSumsToScore(t *testing.T) {
 	}
 	if diff := total - sum; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("score %v != sum of breakdown %v", total, sum)
+	}
+}
+
+// The cases below all came from a harder golden set written from how people
+// actually search, not from reading the parser. Each one failed first.
+
+func TestModelWithoutABrandInfersTheBrand(t *testing.T) {
+	// «۲۰۶ می‌خوام» names no marque, but only Peugeot makes a 206.
+	in := ParseQuery("۲۰۶ می‌خوام", testVocab())
+	if in.Model != "206" || in.Brand != "peugeot" {
+		t.Errorf("brand/model = %q/%q, want peugeot/206", in.Brand, in.Model)
+	}
+}
+
+func TestYearRangeBindsBothEnds(t *testing.T) {
+	in := ParseQuery("پژو ۲۰۶ مدل ۹۰ تا ۹۵", testVocab())
+	if in.YearMin != 1390 || in.YearMax != 1395 {
+		t.Errorf("years = %d..%d, want 1390..1395", in.YearMin, in.YearMax)
+	}
+}
+
+func TestPriceRangeBindsBothEnds(t *testing.T) {
+	// The "تا" inside a range would otherwise be read as a bare ceiling.
+	in := ParseQuery("ماشین بین ۵۰۰ تا ۸۰۰ میلیون", testVocab())
+	if in.PriceMin != 500*million || in.PriceMax != 800*million {
+		t.Errorf("price = %d..%d, want %d..%d",
+			in.PriceMin, in.PriceMax, 500*million, 800*million)
+	}
+}
+
+func TestDecimalBillionsAreNotTruncated(t *testing.T) {
+	// Parsed as an integer this became 1, scaled to one million tomans — a
+	// ceiling no car has ever met.
+	in := ParseQuery("خودرو تا 1.5 میلیارد", testVocab())
+	if in.PriceMax != 1_500_000_000 {
+		t.Errorf("price_max = %d, want 1500000000", in.PriceMax)
+	}
+}
+
+func TestBareGregorianYearNeedsNoModelKeyword(t *testing.T) {
+	// «کیا سراتو ۲۰۱۷» never says «مدل», and 2017 cannot be anything else.
+	in := ParseQuery("کیا سراتو ۲۰۱۷", testVocab())
+	if in.YearMin != 1396 || in.YearMax != 1396 {
+		t.Errorf("years = %d..%d, want 1396..1396", in.YearMin, in.YearMax)
+	}
+}
+
+func TestADecimalIsNeverMistakenForAYear(t *testing.T) {
+	if looksLikeAYear(1.5) {
+		t.Error("1.5 treated as a year")
+	}
+	if !looksLikeAYear(95) || !looksLikeAYear(1396) || !looksLikeAYear(2017) {
+		t.Error("a real year was not recognised")
 	}
 }

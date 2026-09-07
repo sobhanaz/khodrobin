@@ -1,0 +1,52 @@
+{
+  "total": 30,
+  "passed": 30,
+  "errored": 0,
+  "accuracy_pct": 100.0,
+  "threshold_pct": 85.0,
+  "per_field": {
+    "brand": {
+      "correct": 25,
+      "graded": 25,
+      "pct": 100.0
+    },
+    "price_max": {
+      "correct": 5,
+      "graded": 5,
+      "pct": 100.0
+    },
+    "model": {
+      "correct": 15,
+      "graded": 15,
+      "pct": 100.0
+    },
+    "year_min": {
+      "correct": 3,
+      "graded": 3,
+      "pct": 100.0
+    },
+    "year_max": {
+      "correct": 3,
+      "graded": 3,
+      "pct": 100.0
+    },
+    "price_min": {
+      "correct": 1,
+      "graded": 1,
+      "pct": 100.0
+    },
+    "priority": {
+      "correct": 3,
+      "graded": 3,
+      "pct": 100.0
+    }
+  },
+  "latency_ms": {
+    "p50": 1.1,
+    "p95": 3.6
+  },
+  "intent_sources": {
+    "rules": 30
+  },
+  "failures": []
+}

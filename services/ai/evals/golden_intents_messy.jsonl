@@ -1,0 +1,12 @@
+{"q":"پژو ۲۰۶ تیب ۵","expect":{"brand":"peugeot","model":"206"},"note":"typo: تیب for تیپ"}
+{"q":"پرايد ۱۳۱","expect":{"brand":"pride","model":"131"},"note":"arabic yeh inside the brand"}
+{"q":"پیژو ۲۰۶","expect":{"brand":"peugeot","model":"206"},"note":"common misspelling of پژو"}
+{"q":"سمند ملی","expect":{"brand":"samand"},"note":"colloquial nickname"}
+{"q":"تندر","expect":{"brand":"renault","model":"l90"},"note":"model name used alone as the brand"}
+{"q":"ال ۹۰","expect":{"brand":"renault","model":"l90"},"note":"spoken form of L90"}
+{"q":"۲۰۶ اس دی","expect":{"brand":"peugeot","model":"206-sd"},"note":"SD spelled out in persian"}
+{"q":"پراید هاچبک","expect":{"brand":"pride","model":"hatchback"},"note":"body style is the model here"}
+{"q":"کویک","expect":{"brand":"quik"},"note":"کویک without the doubled yeh"}
+{"q":"دنا پلاس توربو","expect":{"brand":"dena","model":"plus"},"note":"trim tail after the model"}
+{"q":"ماشین زیر پونصد میلیون","expect":{"price_max":500000000},"note":"number written as a word"}
+{"q":"پژو 206 مدل نود و پنج","expect":{"brand":"peugeot","model":"206","year_min":1395,"year_max":1395},"note":"year written as words"}
