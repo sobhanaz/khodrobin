@@ -30,7 +30,7 @@ onMounted(() => {
 })
 
 const anchor = ref<HTMLElement | null>(null)
-const pos = ref({ top: 0, left: 0 })
+const pos = ref({ bottom: 0, left: 0 })
 
 const PEEK_W = 288 // must match the w-72 below
 const GUTTER = 12
@@ -55,7 +55,13 @@ function place() {
   // so the panel is always fully readable, wherever the badge happens to sit.
   const wanted = r.right - PEEK_W
   const maxLeft = window.innerWidth - PEEK_W - GUTTER
-  pos.value = { top: r.top, left: Math.round(Math.min(Math.max(GUTTER, wanted), maxLeft)) }
+  pos.value = {
+    // Anchored by its bottom edge, so the panel sits above the badge without
+    // needing a translate of its own. The transition owns `transform`; sharing
+    // it would make the panel jump on every open.
+    bottom: Math.round(window.innerHeight - r.top + 8),
+    left: Math.round(Math.min(Math.max(GUTTER, wanted), maxLeft)),
+  }
 }
 
 function show() {
@@ -114,47 +120,57 @@ const freshness = computed(() => {
       </svg>
     </a>
 
-    <Transition name="peek">
-      <span
-        v-if="open"
-        role="tooltip"
-        class="fixed z-50 block w-72 max-w-[calc(100vw-1.5rem)] -translate-y-[calc(100%+8px)]
-               rounded-xl border border-white/[.12]
-               bg-surface p-3 text-right shadow-[0_24px_60px_-24px_#000]"
-        :style="{ top: `${pos.top}px`, left: `${pos.left}px` }"
-      >
-        <span class="flex gap-3">
-          <CarImage :src="best!.image ?? null" :alt="best!.title || label" class="!w-20" />
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-[.8rem] text-ink">{{ best!.title || label }}</span>
-            <span class="mt-1 block font-mono text-[1rem] font-bold text-ink" dir="ltr">
-              {{ f.money(best!.price) }}
-              <span class="font-sans text-[.66rem] text-ink-3">تومان</span>
+    <!-- Teleported to the body, and it has to be.
+         `position: fixed` is only relative to the viewport while no ancestor
+         carries a transform. SpecCard has hover:-translate-y-0.5, and hovering
+         a badge means hovering the card, so the card became the containing
+         block at precisely the moment this panel opened: the coordinates were
+         computed against the viewport and then resolved against the card,
+         putting the panel 588px below the badge and off the screen. Leaving the
+         card's subtree also escapes its overflow-hidden for good. -->
+    <Teleport to="body">
+      <Transition name="peek">
+        <span
+          v-if="open"
+          role="tooltip"
+          dir="rtl"
+          class="fixed z-50 block w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/[.12]
+                 bg-surface p-3 text-right shadow-[0_24px_60px_-24px_#000]"
+          :style="{ bottom: `${pos.bottom}px`, left: `${pos.left}px` }"
+        >
+          <span class="flex gap-3">
+            <CarImage :src="best!.image ?? null" :alt="best!.title || label" class="!w-20 shrink-0" />
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[.8rem] text-ink">{{ best!.title || label }}</span>
+              <span class="mt-1 block font-mono text-[1rem] font-bold text-ink" dir="ltr">
+                {{ f.money(best!.price) }}
+                <span class="font-sans text-[.66rem] text-ink-3">تومان</span>
+              </span>
+              <span
+                class="mt-1 inline-block rounded px-1.5 py-0.5 font-mono text-[.66rem]"
+                dir="ltr"
+                :class="best!.vs_median_pct < 0 ? 'bg-good/[.12] text-good' : 'bg-accent/[.12] text-accent'"
+              >{{ best!.vs_median_pct > 0 ? '+' : '' }}{{ best!.vs_median_pct }}%</span>
             </span>
-            <span
-              class="mt-1 inline-block rounded px-1.5 py-0.5 font-mono text-[.66rem]"
-              dir="ltr"
-              :class="best!.vs_median_pct < 0 ? 'bg-good/[.12] text-good' : 'bg-accent/[.12] text-accent'"
-            >{{ best!.vs_median_pct > 0 ? '+' : '' }}{{ best!.vs_median_pct }}%</span>
           </span>
-        </span>
 
-        <span class="mt-2 block text-[.7rem] text-ink-3">
-          <template v-if="best!.mileage_km != null">{{ f.money(best!.mileage_km) }} کیلومتر</template>
-          <template v-if="best!.city"> · {{ best!.city }}</template>
-          <template v-if="offers.length > 1"> · {{ f.fa(offers.length) }} آگهی در {{ label }}</template>
-        </span>
+          <span class="mt-2 block text-[.7rem] text-ink-3">
+            <template v-if="best!.mileage_km != null">{{ f.money(best!.mileage_km) }} کیلومتر</template>
+            <template v-if="best!.city"> · {{ best!.city }}</template>
+            <template v-if="offers.length > 1"> · {{ f.fa(offers.length) }} آگهی در {{ label }}</template>
+          </span>
 
-        <!-- Freshness is stated, not implied. The crawler runs every three
-             hours, so a price here can be hours old and the reader should know
-             before they act on it. -->
-        <span v-if="freshness" class="mt-1 block text-[.66rem] text-ink-3 opacity-75">
-          آخرین بررسی: {{ freshness }}
-        </span>
+          <!-- Freshness is stated, not implied. The crawler runs every three
+               hours, so a price here can be hours old and the reader should know
+               before they act on it. -->
+          <span v-if="freshness" class="mt-1 block text-[.66rem] text-ink-3 opacity-75">
+            آخرین بررسی: {{ freshness }}
+          </span>
 
-        <span class="mt-2 block text-[.66rem] text-accent">باز کردن در {{ label }} ↗</span>
-      </span>
-    </Transition>
+          <span class="mt-2 block text-[.66rem] text-accent">باز کردن در {{ label }} ↗</span>
+        </span>
+      </Transition>
+    </Teleport>
   </span>
 </template>
 
