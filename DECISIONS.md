@@ -273,3 +273,58 @@ A link the reviewer cannot open is not a partial failure. It looks identical to 
 **Choice.** pnpm, which resolves the same `package.json` in 1.4 seconds, is what Nuxt recommends, and gives CI real reproducibility through `--frozen-lockfile`.
 
 **Detail worth keeping.** The lockfile is generated inside `node:22-alpine`, the same image that installs from it. Generating it with a different runtime than the one that consumes it is how the original mismatch appeared in the first place.
+
+---
+
+## ۱۶. حساب کاربری فقط برای ذخیره و هشدار — accounts, and why search stays anonymous
+
+**Context.** Decision ۷ said this product needs no user accounts, and for pure search that was right. The scope later grew to include registration, an admin panel and a landing page.
+
+**The question that decides it.** Not "do we want accounts" but "what does an account let a person do that they cannot do already". A login that only unlocks the thing anonymous visitors already have is friction wearing a feature's clothes.
+
+**Choice.** Accounts exist for **saved searches and price alerts**, and nothing else. Search, ranking, explanations and the per-car pages stay fully anonymous and are never gated.
+
+**Why that specific pair.** Torob has «پیگیری قیمت». A used-car price that moves is exactly the thing a buyer wants told to them rather than having to come back and check, and telling them requires knowing where to write. That is a real reason to hold an address; "so we have users" is not.
+
+**Trade-off accepted.** A database, a mail dependency, session handling and an authentication surface — all of which have to be got right, and none of which the search product needed. Mitigated by keeping the blast radius small: the auth service is separate, has its own Caddy prefix, and an outage in it cannot take search down.
+
+**Consequences worth stating, because they were deliberate:**
+- The signup form never reveals whether an address is registered, and login hashes a password even for accounts that do not exist so response time cannot become the same oracle.
+- Access tokens live in memory, refresh tokens in an HttpOnly cookie. An XSS bug then borrows a session for fifteen minutes rather than stealing one for thirty days.
+- Refresh-token reuse is treated as compromise and revokes every session for that user. Annoying once, versus an attacker holding a session for a month.
+- The admin route answers 404 to a non-admin, because 403 confirms both that the route exists and that this account is merely not privileged enough.
+- Arming a price alert requires a verified address. Otherwise the product is a way to send mail to arbitrary strangers.
+- `is_admin` defaults to false with no path to raise it from the application. Granting it is a deliberate SQL statement, not a feature.
+
+---
+
+## ۱۷. صفحه‌ی هر خودرو برای موتور جست‌وجو — server-rendered pages, and the markup that made this project possible
+
+**Context.** The product had one page. A search product with one page is invisible to search engines.
+
+**Choice.** Every spec gets a server-rendered page at `/car/{key}` publishing `schema.org/Car` structured data, plus a sitemap generated from the live index and a generated `robots.txt`.
+
+**Why it is on-strategy rather than bolted on.** This project can crawl Divar without a browser precisely *because* Divar publishes schema.org JSON-LD for search engines. Publishing the same markup is not imitation; it is the same mechanism, and it is what makes a catalogue legible to anything other than a human with a mouse.
+
+**Details that decide whether the markup is worth anything:**
+- schema.org has no toman. Publishing toman figures under `priceCurrency: IRR` would understate every price tenfold, so the numbers are converted to the unit the code actually names.
+- The sitemap is generated, not stored. The catalogue changes every three hours; a file would be wrong almost immediately.
+- Specs are ordered by corroboration. A crawl budget is finite and a single-offer card is the least useful page here.
+- A sitemap that 500s teaches a crawler to stop asking, so a failed index fetch still returns valid XML with the static pages listed.
+- Result cards link to their own page. Without a link there is nothing to follow.
+
+**Trade-off accepted.** Thousands of thin pages if the index grows and most specs stay single-source. The corroboration ordering is the current answer; a `noindex` on single-offer specs is the next one if it becomes a problem.
+
+---
+
+## ۱۸. پرچم تزئینی نیست — a flag that does not change behaviour is decoration
+
+**Context.** Outlier detection worked: a Saina listed at 82% under its cohort was correctly tagged `price_outlier`, and its title was «فروش و مشارکت حواله ساینا» — an allocation certificate, not a car.
+
+**What happened anyway.** It was still the cheapest number, so it still sorted first, and the model was still handed it as the thing to justify. The live card explained itself as «۸۱.۹٪ کمتر از میانه‌ی بازار».
+
+**The part worth remembering.** The hallucination guard could not catch this and should not have. 81.9٪ was the true figure. **An explanation can be perfectly accurate and still describe the wrong thing** — accuracy is a property of a sentence, relevance is a property of what you chose to say it about.
+
+**Choice.** Offers sort flagged-last within a spec, and flagged offers are removed before the top three reach the model — falling back to the raw list only when every offer is flagged, because some explanation beats none.
+
+**Trade-off accepted.** A genuinely cheap listing that trips a flag gets buried. That is the right direction to be wrong in: showing a real bargain second costs a user one scroll, while leading with a حواله costs them their trust in every number on the page.

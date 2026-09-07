@@ -1,22 +1,27 @@
 # Handoff — where KhodroBin stands
 
-*Last updated: 7 Sep 2026, end of day 1 of 14. Target submission: 20 Sep 2026.*
+*Last updated: 7 Sep 2026. Target submission: 20 Sep 2026.*
 
 ---
 
 ## The one-paragraph state
 
-**خودروبین is live at <https://khodrobin.noxioai.com>** (and `khodro6.noxioai.com` over IPv6). It crawls four Iranian car marketplaces on a 3-hour schedule, normalizes four incompatible schemas into one, groups offers by car spec, ranks them deterministically, and serves a server-rendered Persian RTL front end. Everything ships from GitHub: push to `main` → build → GHCR → deploy → smoke test. Nothing is built or edited on the server by hand.
+**خودروبین is live at <https://khodrobin.noxioai.com>.** Five services on one box: a Python crawler over four Iranian marketplaces, a Go search API, a FastAPI model layer with a four-axis hallucination guard, a Go accounts service, and a server-rendered Nuxt front end in Persian RTL. Everything ships from GitHub — push to `main` → build → GHCR → deploy → smoke test. Four of the five rubric lines are implemented and deployed; the demo video is the one that remains.
 
 ---
 
-## Live numbers (last measured)
+## Live numbers
 
 ```
-listings 3,746    indexed 2,115 (56.5%)    specs 1,209    multi-source 137
-sources: divar · bama · hamrah · khodro45
+captured 10,516  →  duplicates collapsed 4,175 (40%)  →  unique 6,341
+indexed 3,560 offers  →  2,286 specs  →  310 multi-source  →  26 flagged
+sources: divar · bama · hamrah-mechanic · khodro45
 search: parse ~0.01ms · rank ~1.4ms
+eval: 90/92 golden queries, 0 model calls
+tests: 106 across five services
 ```
+
+Verify at [`/api/v1/stats`](https://khodrobin.noxioai.com/api/v1/stats) and `/readyz`.
 
 ---
 
@@ -24,97 +29,77 @@ search: parse ~0.01ms · rank ~1.4ms
 
 | | |
 |---|---|
-| Server | Vultr Amsterdam, Ubuntu 26.04, 8 vCPU / 15 GB / 141 GB (address held outside the repo) |
+| Server | Vultr Amsterdam, Ubuntu 26.04, 8 vCPU / 15 GB / 141 GB (address in GitHub secrets) |
 | Domains | `khodrobin.noxioai.com` (A), `khodro6.noxioai.com` (AAAA), both DNS-only |
 | Deploy path | `/opt/khodrobin`, `docker-compose.prod.yml` |
 | Repo | <https://github.com/sobhanaz/khodrobin> (public) |
-| Registry | GHCR — `khodrobin-api`, `khodrobin-web`, `khodrobin-crawler` |
+| Registry | GHCR — `khodrobin-{api,web,crawler,ai,auth}` |
+| Model | Ollama `qwen2.5:7b`, pulled on boot, kept resident |
 
-Services running: `caddy`, `web` (Nuxt), `api` (Go), `crawler` (Python), `postgres`, `redis`.
+Containers: `caddy`, `web`, `api`, `ai`, `auth`, `crawler`, `ollama`, `postgres`, `redis`.
 
-**Postgres and Redis are running but not yet used.** They are in the compose file for the next phase; the index is currently a JSON artifact on a shared volume.
-
-GitHub secrets already set: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DOMAIN`, `POSTGRES_PASSWORD`, `SELLER_HASH_SALT`.
+GitHub **secrets**: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DOMAIN`, `POSTGRES_PASSWORD`, `SELLER_HASH_SALT`, `JWT_SECRET`, `SMTP_PASSWORD`.
+GitHub **variables** (non-sensitive): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_FROM`.
 
 ---
 
 ## What works
 
-- **Four sources, all over plain HTTP.** No browser automation: Divar server-renders JSON-LD `@type: Car`, Bama has a public JSON API, Hamrah is Next.js `__NEXT_DATA__`, Khodro45 is a DRF endpoint.
-- **Unit reconciliation, verified not assumed.** Divar quotes rials; the other three quote tomans. All four mix Jalali and Gregorian years inside a single feed.
-- **Contradiction flags.** e.g. Bama lists a 1385 Pride as «صفر کیلومتر» while recording «گلگیر تعویض». Flagged, never silently repaired.
-- **Spec clustering** on brand/model/trim/gearbox/year/mileage-band, with median, price spread and per-source corroboration.
-- **Deterministic ranking** in Go, 4 modes, returning its own per-factor breakdown (which the «پشت صحنه» panel draws).
-- **Scheduled crawler** with a startup rebuild, atomic index writes, and hot-reload in the API — no restart needed.
-- **Nuxt 3 + Vue 3 + Tailwind v4** front end, SSR, RTL-native.
-- CI: gofmt, vet, race tests, Python tests, Caddyfile validation, Nuxt build.
+- **Four sources over plain HTTP.** No browser automation: Divar server-renders JSON-LD, Bama has a public JSON API, Hamrah-Mechanic is Next.js, Khodro45 is DRF.
+- **Unit reconciliation, verified not assumed.** Divar quotes rials, the rest tomans; all four mix Jalali and Gregorian years inside one feed.
+- **Deduplication.** 40% of captured rows are re-crawls of the same ad; collapsed before anything counts them.
+- **Contradiction and outlier flags**, shown rather than silently repaired. Flagged offers sink below clean ones and never lead an explanation.
+- **Deterministic ranking** in Go, four modes, returning its own per-factor breakdown — which is what makes the «پشت صحنه» panel honest.
+- **Explanations** from a local model, with a four-axis guard and a templated fallback that always passes it.
+- **Accounts**: register → verify → login → saved searches → price alerts. SMTP confirmed working.
+- **SEO**: per-car SSR pages with `schema.org/Car`, generated sitemap, generated robots.
+- **CI**: gofmt, vet, race tests, Python tests, Nuxt build, Caddyfile validation, and the eval thresholds.
 
-Tests: 21 Python, ~17 Go.
+Pages: `/`, `/about`, `/faq`, `/contact`, `/login`, `/register`, `/verify`, `/account`, `/admin`, `/car/{key}`.
 
 ---
 
-## Open items — none blocking
+## Open items
 
-Car photos are **live and verified**: the Go struct fix deployed and the API now
-returns image URLs (confirmed from `cdn.hamrah-mechanic.com` and
-`media.khodro45.com`). 96% of specs carry a photo.
+**1. No admin account exists yet.** Registration creates ordinary users; `is_admin` defaults to false, deliberately — there is no self-promotion path in the code. To grant it after registering and verifying:
 
-Sanity check on resuming:
-
-```bash
-curl -s https://khodrobin.noxioai.com/healthz
-curl -s "https://khodrobin.noxioai.com/api/v1/search?q=&limit=1" | grep -o '"image":"[^"]*"' | head -1
-curl -s https://khodrobin.noxioai.com/api/v1/stats
+```sql
+UPDATE users SET is_admin = TRUE WHERE email = 'sobhandevuk@gmail.com';
 ```
 
-Then open <https://khodrobin.noxioai.com> and confirm cards render with photos.
+**2. Explanation warming reports zero.** `/api/v1/stats` shows `explanations.warmed: 0`. On-demand explanations work (verified live), so this only costs first-visit latency on cold specs. Check `docker compose logs crawler` for the `warm_explanations.py` run and whether it writes `/data/explanations.json` before its budget expires.
+
+**3. The server root password is still the one shared in chat** on 6 Sep, and that transcript is not private. The Actions deploy key is installed and working, so rotating costs nothing operationally.
+
+**4. Two audit workflows never finished.** Both were interrupted between sessions. Worth re-running now that auth, seven pages and the SEO surface exist — the attack surface has grown considerably since the first pass.
 
 ---
 
 ## Next, in priority order
 
-### 1. The AI service (`services/ai/`) — not started
-FastAPI with three narrow jobs and nothing else:
-- `POST /intent` — Persian query → validated JSON. **The Go rules parser stays and always runs as the fallback**, so a model outage degrades search instead of breaking it.
-- `POST /explain` — top 3 specs → two Persian sentences, constrained to facts in the input, with a post-validator that rejects any number not present in the input.
-- Provider switch: `AI_PROVIDER=ollama|openai|anthropic|gemini`, one config line.
+### 1. The demo video — the only unmet rubric line
+Shot list is in [`docs/ROADMAP.md`](./docs/ROADMAP.md) §19. Everything it needs to show now exists. The strongest sequence, in order: one car across four marketplaces → the messy Persian query parsed → `make eval` in a terminal → the guard rejecting a real model output live.
 
-**Needs a decision:** an API key, or Ollama locally. The server reaches all three cloud providers (verified 401/405, not blocked) and has 15 GB RAM for Qwen 2.5 7B on CPU. Cloud is faster and gives a real cost number; Ollama costs nothing and always works.
+### 2. Re-audit before recording
+Adversarial passes over the guard, the live UX, the data fixes, and the eval methodology. Every previous round found something real that self-review had missed.
 
-### 2. `make eval` — golden set written, harness not
-`services/ai/evals/golden_intents.jsonl` already has **50 hand-labelled Persian queries** covering: Finglish, Arabic-yeh folding, no-space input, two-digit Jalali years, price shorthand (بارsingle/میلیون/میلیارد), longest-alias cases (کرولا کراس vs کرولا), and the trap where «بالای ۹۵» is a year and not a price.
-
-Still to write: `services/ai/evals/run_eval.py`. **Design decision already made:** it should hit the live `/api/v1/search` endpoint and compare the returned `intent`, so it measures the deployed system rather than a library in isolation. It can produce a real accuracy number for the rules parser *today*, before any model exists — that becomes the baseline the LLM must beat.
-
-This is the highest-leverage remaining item: *"ساخت و بهتر کردن روش‌های ارزیابی دقت و عملکرد مدل‌های AI"* is a literal responsibility in the job description, and Torob publishes their own numbers (92% on 100 items, $6/day).
-
-### 3. Then
-- Monitoring: Prometheus `/metrics`, Grafana, Telegram alerts, nightly eval cron with regression alert.
-- Elasticsearch (on their stack list, currently unused).
-- `CRAWLING.md`, `SCALING.md`.
-- The ≤4:50 Persian video. Shot list is in `docs/ROADMAP.md` §19.
+### 3. If time allows
+Monitoring and alerting (Prometheus is exposed but nothing scrapes it), Elasticsearch (on Torob's stack list, currently unused), `CRAWLING.md` and `SCALING.md`.
 
 ---
 
 ## Bugs worth re-telling in the video
 
-Each one passed every health check while being broken:
+Each one passed every check while being broken. That is the point of the story: not that the code had bugs, but that the *tests and probes* said it did not.
 
-1. **Divar soft-blocks with HTTP 200.** Under sustained crawling it stops including its JSON-LD and still returns 200. Success codes lie; the crawler now measures *yield* and treats an empty 200 as a strike. Divar is throttled to 4s/request.
-2. **Caddy served the old front end for 49 minutes.** The Caddyfile is bind-mounted, so editing it doesn't change the container spec and `compose up -d` won't recreate it. Nuxt deployed, started healthy, and was never reached — and the smoke test passed, because `/healthz` still routed correctly.
-3. **Adding a fourth source changed nothing.** Khodro45 files the gearbox inside `trim`, so every spec keyed `gearbox=na` and silently formed a parallel universe. Fixed: 66 → 92 multi-source clusters, 2 → 14 with three sources.
-4. **Photos vanished between Python and Go.** `encoding/json` drops unknown fields with no error.
-5. **npm cannot resolve the Nuxt tree** — `Cannot read properties of null (reading 'edgesOut')`, reproducible with `nuxt + vue` alone on npm 10 and 11. Switched to pnpm.
-
----
-
-## Decisions on record
-
-`DECISIONS.md` has 15 entries, each as context → options → choice → trade-off. The load-bearing ones:
-
-- **۱۰** — the split Iran/Frankfurt infrastructure was unnecessary; measured that Amsterdam reaches both the model APIs and the Iranian sources.
-- **۱۱** — never Vercel or Firebase for the submitted URL; both are unreachable from Iran under sanctions and the reviewer is in Tehran.
-- **۱۳** — the unit of comparison is the *spec*, not a physical car. Cross-source physical duplicates do not exist at any honest volume; Torob's own card is one product with many sellers, not one object.
+1. **Divar soft-blocks with HTTP 200.** Under sustained crawling it stops including its JSON-LD and still returns 200. Success codes lie; the crawler measures yield.
+2. **Caddy served the old front end for 49 minutes.** The Caddyfile is bind-mounted, so `compose up -d` never recreated it. Nuxt deployed, started healthy, and was never reached — and the smoke test passed, because `/healthz` still routed correctly.
+3. **A fourth source changed nothing.** Khodro45 files the gearbox inside `trim`, so every spec keyed `gearbox=na` and silently formed a parallel universe. Fixed: 66 → 92 multi-source clusters at the time.
+4. **43% of offers were the same ad counted again**, skewing medians by up to 32%, because the content hash covered fields that change on every fetch.
+5. **The guard's most important check did not exist.** `IGNORE_BELOW=100` hid every percentage, so «۴۵٪ زیر میانه» passed on a car 21.5٪ under — and the test covering it passed only because the guard never looked.
+6. **The guard then rejected correct output.** `11.6٪` parsed as `116` because `.` was treated as a thousands separator.
+7. **Four fields silently dropped between Python and Go.** `encoding/json` discards unknown fields without error: car photos, `duplicates_collapsed`, `listings_captured`, `median_reliable`.
+8. **A flagged outlier still led the card.** A «حواله» listing at 82% under its cohort was detected, tagged — and still shown first, and still handed to the model to justify.
 
 ---
 
@@ -122,18 +107,31 @@ Each one passed every health check while being broken:
 
 ```bash
 # local
-cd services/api && go test ./...
+make test                      # Go race tests + Python tests
+make index                     # rebuild the index from raw data
+make eval API=https://khodrobin.noxioai.com
+
+cd services/api  && go test ./...
+cd services/auth && go test ./...
 cd services/crawler && ./.venv/bin/python -m pytest -q
-cd services/web && pnpm run build
+cd services/ai   && ../crawler/.venv/bin/python -m pytest tests/ -q
+cd services/web  && pnpm run build      # pnpm, not npm — see DECISIONS ۱۵
 
-# rebuild the index locally from raw data
-cd services/crawler && ./.venv/bin/python build_index.py \
-  --raw ../../data/raw/listings.jsonl --out ../api/data/index.json
-
-# server (password is in the session, not in this file)
+# server (host and credentials live in GitHub secrets)
 ssh <deploy-user>@<deploy-host>
-cd /opt/khodrobin && docker compose -f docker-compose.prod.yml ps
+cd /opt/khodrobin
+docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs crawler --tail=30
+docker compose -f docker-compose.prod.yml logs ai --tail=30
 ```
 
-**Security note:** deployment credentials live only in GitHub Actions secrets, never in this repo. A dedicated Actions deploy key is installed on the box.
+---
+
+## Decisions on record
+
+[`DECISIONS.md`](./DECISIONS.md) carries the full set. The load-bearing ones:
+
+- **۱۰** — the split Iran/Frankfurt infrastructure was unnecessary; measured that Amsterdam reaches both the model APIs and the Iranian sources.
+- **۱۱** — never Vercel or Firebase for the submitted URL; both are unreachable from Iran under sanctions and the reviewer is in Tehran.
+- **۱۳** — the unit of comparison is the *spec*, not a physical car. Cross-source physical duplicates do not exist at any honest volume; Torob's own card is one product with many sellers.
+- **۱۶** — accounts exist for saved searches and price alerts, and search never sits behind them.
