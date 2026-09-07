@@ -118,7 +118,7 @@ def supported_numbers(facts: dict) -> set[int]:
             add(abs(float(pct)))
             add(float(abs(round(float(pct)))))
     for key in ("median_price", "min_price", "max_price", "year",
-                "offer_count", "source_count"):
+                "offer_count", "source_count"):  # noqa: E501
         add(facts.get(key))
     # Comparing two offers is the point of the product, so the differences
     # between them are derived facts rather than invented ones. Only pairwise
@@ -214,12 +214,24 @@ def check(text: str, facts: dict) -> tuple[bool, list[float], list[str]]:
     return (not bad_numbers and not bad_topics), sorted(bad_numbers), bad_topics
 
 
+# A mileage gap smaller than this is noise between two used cars, not a reason
+# to pick one. Stating «۴۱ کیلومتر کمتر» as though it mattered reads as a
+# machine padding a sentence.
+MEANINGFUL_KM_GAP = 5_000
+
+
 def fallback(facts: dict) -> str:
     """A templated explanation assembled only from the data.
 
-    Used when the model is unreachable, too slow, or caught inventing a number.
-    It is less fluent and completely true, which is the right trade for a
-    product whose claim is that its numbers can be trusted.
+    Used when the model is unreachable, too slow, or caught inventing something.
+    Less fluent and completely true, which is the right trade for a product
+    whose claim is that its numbers can be trusted.
+
+    The second sentence must be an actual trade-off. «در عوض» means "in
+    exchange", so it may only introduce something the cheapest option is WORSE
+    at. Lower mileage is an advantage; announcing it as a sacrifice — which this
+    function used to do — is the same mistake the system prompt tells the model
+    not to make.
     """
     offers = facts.get("offers", [])
     if not offers:
@@ -229,37 +241,56 @@ def fallback(facts: dict) -> str:
     pct = abs(int(round(best.get("vs_median_pct", 0))))
     median = facts.get("median_price", 0)
     name = facts.get("title", "این خودرو")
+    source = best.get("source_fa", "این منبع")
+    price = best.get("price", 0)
 
-    first = (
-        f"{name} در «{best.get('source_fa', 'این منبع')}» با قیمت "
-        f"{best.get('price', 0):,} تومان، {pct}٪ پایین‌تر از میانه‌ی "
-        f"{median:,} تومانی این مدل است."
-    ) if pct else (
-        f"{name} در «{best.get('source_fa', 'این منبع')}» با قیمت "
-        f"{best.get('price', 0):,} تومان، نزدیک به میانه‌ی بازار است."
-    )
-
-    if len(offers) > 1:
-        second = offers[1]
-        km_a, km_b = best.get("mileage_km"), second.get("mileage_km")
-        if km_a is not None and km_b is not None and km_a != km_b:
-            more = "بیشتر" if km_a > km_b else "کمتر"
-            second_sentence = (
-                f"در عوض {abs(km_a - km_b):,} کیلومتر {more} از گزینه‌ی بعدی "
-                f"({second.get('price', 0):,} تومان) کار کرده است."
-            )
-        else:
-            second_sentence = (
-                f"گزینه‌ی بعدی {second.get('price', 0):,} تومان است "
-                f"از «{second.get('source_fa', 'منبعی دیگر')}»."
-            )
+    if pct and facts.get("median_reliable", True):
+        first = (f"{name} در «{source}» با قیمت {price:,} تومان، "
+                 f"{pct}٪ پایین‌تر از میانه‌ی {median:,} تومانی این مدل است.")
+    elif pct:
+        # Below three offers the median is the mean of a couple of asking
+        # prices, so it is quoted as a comparison rather than as market truth.
+        first = (f"{name} در «{source}» با قیمت {price:,} تومان، "
+                 f"ارزان‌ترین آگهی از {facts.get('offer_count', 1)} آگهی موجود است.")
     else:
-        second_sentence = (
-            f"این مدل فقط {facts.get('offer_count', 1)} آگهی دارد، "
-            "پس میانه‌ی قیمت هنوز کم‌اعتبار است."
-        )
+        first = (f"{name} در «{source}» با قیمت {price:,} تومان، "
+                 "نزدیک به میانه‌ی بازار است.")
 
+    second_sentence = _trade_off(facts, best, offers)
     return f"{first} {second_sentence}"
+
+
+def _trade_off(facts: dict, best: dict, offers: list[dict]) -> str:
+    """The honest second sentence: what the cheapest option costs you.
+
+    Falls back through progressively weaker claims and, when the cheapest offer
+    is simply better on every axis we know, says that instead of inventing a
+    downside.
+    """
+    if len(offers) < 2:
+        return (f"این مدل فقط {facts.get('offer_count', 1)} آگهی دارد، "
+                "پس میانه‌ی قیمت هنوز کم‌اعتبار است.")
+
+    second = offers[1]
+    km_a, km_b = best.get("mileage_km"), second.get("mileage_km")
+
+    # A genuine trade-off: cheaper, but more worn.
+    if km_a is not None and km_b is not None and km_a - km_b >= MEANINGFUL_KM_GAP:
+        return (f"در عوض {km_a - km_b:,} کیلومتر بیشتر از گزینه‌ی بعدی "
+                f"({second.get('price', 0):,} تومان) کار کرده است.")
+
+    # Flagged data is a real cost even when the numbers look good.
+    if facts.get("flags"):
+        return ("در عوض داده‌ی این آگهی یک ناسازگاری دارد که پایین‌تر نشان داده شده است.")
+
+    # Cheaper and less worn: no downside to report, so report the comparison
+    # instead of manufacturing one.
+    if km_a is not None and km_b is not None and km_b - km_a >= MEANINGFUL_KM_GAP:
+        return (f"گزینه‌ی بعدی {second.get('price', 0):,} تومان است و "
+                f"{km_b - km_a:,} کیلومتر بیشتر کار کرده، پس این آگهی از هر دو نظر جلوتر است.")
+
+    return (f"تفاوت اصلی‌اش با گزینه‌ی بعدی فقط قیمت است: "
+            f"{second.get('price', 0):,} تومان از «{second.get('source_fa', 'منبعی دیگر')}».")
 
 
 def build_prompt(facts: dict) -> str:
@@ -297,6 +328,7 @@ def facts_from_spec(spec: dict) -> dict:
         "title": " ".join(p for p in name_parts if p).strip(),
         "year": spec.get("year"),
         "median_price": spec.get("median_price", 0),
+        "median_reliable": spec.get("median_reliable", True),
         "min_price": spec.get("min_price", 0),
         "max_price": spec.get("max_price", 0),
         "offer_count": spec.get("offer_count", 0),

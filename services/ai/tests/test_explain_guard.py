@@ -177,3 +177,49 @@ def test_an_ordinary_correct_explanation_still_passes():
             "در عوض ۱۸۰۰۰ کیلومتر بیشتر از گزینه‌ی بعدی کار کرده است.")
     ok, numbers, topics = explain.check(text, FACTS)
     assert ok, (numbers, topics)
+
+
+def test_the_fallback_never_frames_an_advantage_as_a_sacrifice():
+    # Seen live: «در عوض ۴۱ کیلومتر کمتر ... کار کرده است». «در عوض» means "in
+    # exchange" and may only introduce a downside. Lower mileage is an
+    # advantage; announcing it as a cost is the exact error the system prompt
+    # tells the model to avoid.
+    facts = FACTS | {"offers": [
+        {"source_fa": "دیوار", "price": 1_050_000_000, "mileage_km": 20_000, "vs_median_pct": -26.0},
+        {"source_fa": "باما", "price": 1_320_000_000, "mileage_km": 90_000, "vs_median_pct": 5.0},
+    ]}
+    text = explain.fallback(facts)
+    assert "در عوض" not in text or "بیشتر" in text, text
+    ok, nums, topics = explain.check(text, facts)
+    assert ok, (nums, topics)
+
+
+def test_a_real_trade_off_is_still_stated_as_one():
+    facts = FACTS | {"offers": [
+        {"source_fa": "دیوار", "price": 1_050_000_000, "mileage_km": 190_000, "vs_median_pct": -26.0},
+        {"source_fa": "باما", "price": 1_320_000_000, "mileage_km": 40_000, "vs_median_pct": 5.0},
+    ]}
+    text = explain.fallback(facts)
+    assert "در عوض" in text and "بیشتر" in text, text
+    ok, nums, _ = explain.check(text, facts)
+    assert ok, nums
+
+
+def test_a_trivial_mileage_gap_is_not_dressed_up_as_a_reason():
+    # A 41 km difference between two used cars is noise, not a decision factor.
+    facts = FACTS | {"offers": [
+        {"source_fa": "دیوار", "price": 1_050_000_000, "mileage_km": 100_000, "vs_median_pct": -26.0},
+        {"source_fa": "باما", "price": 1_320_000_000, "mileage_km": 100_041, "vs_median_pct": 5.0},
+    ]}
+    text = explain.fallback(facts)
+    assert "41" not in text and "۴۱" not in text, text
+    ok, nums, _ = explain.check(text, facts)
+    assert ok, nums
+
+
+def test_an_unreliable_median_is_not_quoted_as_market_truth():
+    facts = FACTS | {"median_reliable": False, "offer_count": 2, "offers": FACTS["offers"][:2]}
+    text = explain.fallback(facts)
+    assert "میانه" not in text.split(".")[0], text
+    ok, nums, _ = explain.check(text, facts)
+    assert ok, nums
