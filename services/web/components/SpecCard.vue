@@ -4,8 +4,9 @@ import type { Spec } from '~/types'
 const props = defineProps<{ spec: Spec, index: number }>()
 const f = useFormat()
 
-const open = ref<'offers' | 'backstage' | null>(null)
-function toggle(panel: 'offers' | 'backstage') {
+type Panel = 'why' | 'offers' | 'backstage'
+const open = ref<Panel | null>(null)
+function toggle(panel: Panel) {
   open.value = open.value === panel ? null : panel
 }
 
@@ -83,6 +84,15 @@ const mileageBand = computed(() => {
       <button
         type="button"
         class="rounded-full border px-3.5 py-1.5 text-[.78rem] transition"
+        :class="open === 'why'
+          ? 'border-accent/35 bg-accent/[.12] text-accent'
+          : 'border-white/[.07] bg-surface-2 text-ink-2 hover:text-ink hover:border-white/[.12]'"
+        :aria-expanded="open === 'why'"
+        @click="toggle('why')"
+      >چرا این؟</button>
+      <button
+        type="button"
+        class="rounded-full border px-3.5 py-1.5 text-[.78rem] transition"
         :class="open === 'offers'
           ? 'border-accent/35 bg-accent/[.12] text-accent'
           : 'border-white/[.07] bg-surface-2 text-ink-2 hover:text-ink hover:border-white/[.12]'"
@@ -105,7 +115,11 @@ const mileageBand = computed(() => {
     <div class="grid transition-[grid-template-rows] duration-[420ms]" :class="open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
       <div class="overflow-hidden">
         <div class="border-t border-white/[.07] bg-bg-2 px-5 py-4">
-          <template v-if="open === 'offers'">
+          <template v-if="open === 'why'">
+            <WhyThis :spec-key="spec.key" />
+          </template>
+
+          <template v-else-if="open === 'offers'">
             <OfferRow v-for="(o, i) in spec.offers" :key="i" :offer="o" />
           </template>
 

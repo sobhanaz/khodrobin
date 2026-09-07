@@ -31,6 +31,7 @@ services:
     image: ghcr.io/${GHCR_OWNER}/khodrobin-api:${TAG:-latest}
     environment:
       KHODROBIN_ADDR: ":8080"
+      KHODROBIN_AI_URL: http://ai:8000
     volumes:
       # Read-only: the API observes the index, the crawler owns it.
       - indexdata:/data:ro
@@ -45,6 +46,34 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    restart: unless-stopped
+
+  ai:
+    image: ghcr.io/${GHCR_OWNER}/khodrobin-ai:${TAG:-latest}
+    environment:
+      # One line switches the provider. Ollama needs no key and works from
+      # anywhere; the hosted APIs refuse Iranian IPs, which is why local is the
+      # default rather than the fallback.
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      AI_MODEL: ${AI_MODEL:-qwen2.5:7b}
+      OLLAMA_HOST: http://ollama:11434
+      AI_DAILY_COST_CEILING_USD: ${AI_DAILY_COST_CEILING_USD:-5}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    expose:
+      - "8000"
+    depends_on: [ollama]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollamadata:/root/.ollama
+    expose:
+      - "11434"
+    # Never exposed publicly: the AI service reaches it over the compose network
+    # only. An open Ollama port is an open compute endpoint.
     restart: unless-stopped
 
   crawler:
@@ -86,6 +115,7 @@ services:
 
 volumes:
   indexdata:
+  ollamadata:
   pgdata:
   redisdata:
   caddy_data:

@@ -98,6 +98,45 @@ def supported_numbers(facts: dict) -> set[int]:
     return allowed
 
 
+# Claims the input never contains. The prompt already forbids these; the guard
+# exists because a prompt is a request and a check is a guarantee.
+#
+# Found by running the real model: asked to explain a Peugeot 207 it wrote
+# «می‌توانید از ضمانت مکانیکی که ارائه می‌شود بهره‌مند شوید» — inventing a
+# mechanical warranty out of nothing. It cited no number, so a numeric guard
+# alone let it through. On a price-comparison product an invented warranty is
+# as damaging as an invented price.
+FORBIDDEN_TOPICS: dict[str, tuple[str, ...]] = {
+    "warranty": ("ضمانت", "گارانتی", "وارانتی"),
+    "insurance": ("بیمه",),
+    "engine_condition": ("موتور سالم", "موتور تعویض", "وضعیت موتور", "گیربکس سالم"),
+    "inspection": ("کارشناسی شده", "دیاگ", "پلمپ"),
+    "seller": ("فروشنده معتبر", "نمایشگاه معتبر", "شخصی است", "قابل اعتماد"),
+    "financing": ("اقساط", "لیزینگ", "وام", "چک"),
+    "negotiation": ("قابل مذاکره", "تخفیف می‌دهد"),
+}
+
+
+def forbidden_claims(text: str, facts: dict) -> list[str]:
+    """Topics the model mentioned that the input never supplied.
+
+    A phrase is only a violation when nothing in the given facts mentions it —
+    a flag that genuinely says «کارشناسی شده» makes that phrase fair game.
+    """
+    haystack = " ".join([
+        facts.get("title") or "",
+        *(facts.get("flags") or []),
+        *(str(o.get("source_fa") or "") for o in facts.get("offers", [])),
+    ])
+    hits: list[str] = []
+    for topic, phrases in FORBIDDEN_TOPICS.items():
+        for phrase in phrases:
+            if phrase in text and phrase not in haystack:
+                hits.append(topic)
+                break
+    return hits
+
+
 @dataclass
 class Verdict:
     ok: bool
@@ -106,11 +145,17 @@ class Verdict:
     source: str  # model | fallback
 
 
-def check(text: str, facts: dict) -> tuple[bool, list[int]]:
-    """True when every number in the text is one the input actually contained."""
+def check(text: str, facts: dict) -> tuple[bool, list[int], list[str]]:
+    """Verify the explanation against its input.
+
+    Two independent checks, because the model fails in two different ways:
+    numbers it invented, and subjects it invented. Either one alone lets real
+    fabrications through.
+    """
     allowed = supported_numbers(facts)
-    bad = [n for n in digits_in(text) if n >= IGNORE_BELOW and n not in allowed]
-    return (not bad), bad
+    bad_numbers = [n for n in digits_in(text) if n >= IGNORE_BELOW and n not in allowed]
+    bad_topics = forbidden_claims(text, facts)
+    return (not bad_numbers and not bad_topics), bad_numbers, bad_topics
 
 
 def fallback(facts: dict) -> str:

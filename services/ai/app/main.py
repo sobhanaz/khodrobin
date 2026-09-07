@@ -173,14 +173,16 @@ def explain(req: ExplainRequest) -> dict:
         return {"text": explain_mod.fallback(facts), "source": "fallback",
                 "cached": False, "usage": None, "error": str(exc)[:200]}
 
-    ok, unsupported = explain_mod.check(text, facts)
+    ok, unsupported, topics = explain_mod.check(text, facts)
     if not ok:
         _spend["guard_rejections"] += 1
         log.warning(json.dumps({"event": "explain.rejected",
                                 "unsupported": unsupported[:5],
+                                "topics": topics,
                                 "text": text[:200]}, ensure_ascii=False))
         out = {"text": explain_mod.fallback(facts), "source": "fallback",
                "cached": False, "rejected_numbers": unsupported[:5],
+               "rejected_topics": topics,
                "usage": completion.usage.__dict__}
         _cache_put(key, out)
         return out

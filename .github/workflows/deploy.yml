@@ -19,6 +19,7 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-api
   CRAWLER_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-crawler
   WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-web
+  AI_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-ai
 
 jobs:
   build:
@@ -66,6 +67,17 @@ jobs:
             ${{ env.WEB_IMAGE }}:latest
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      - name: ai image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/ai
+          push: true
+          tags: |
+            ${{ env.AI_IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.AI_IMAGE }}:latest
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,mode=max,scope=ai
 
       - name: crawler image
         uses: docker/build-push-action@v6

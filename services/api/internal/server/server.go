@@ -22,10 +22,11 @@ type Server struct {
 	store *index.Store
 	log   *slog.Logger
 	mux   *http.ServeMux
+	ai    *explainClient
 }
 
 func New(store *index.Store, log *slog.Logger) *Server {
-	s := &Server{store: store, log: log, mux: http.NewServeMux()}
+	s := &Server{store: store, log: log, mux: http.NewServeMux(), ai: newExplainClient()}
 	s.routes()
 	return s
 }
@@ -36,6 +37,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/search", s.handleSearch)
 	s.mux.HandleFunc("GET /api/v1/specs/{key...}", s.handleSpec)
 	s.mux.HandleFunc("GET /api/v1/stats", s.handleStats)
+	s.mux.HandleFunc("GET /api/v1/explain/{key...}", s.handleExplain)
 	ui, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		// Embedded at compile time: if this fails the binary is malformed.
