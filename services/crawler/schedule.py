@@ -22,6 +22,10 @@ CITIES = os.getenv("CRAWL_CITIES", "tehran mashhad isfahan shiraz tabriz").split
 PAGES = os.getenv("CRAWL_PAGES", "30")
 RAW = os.getenv("CRAWL_RAW", "/data/raw/listings.jsonl")
 INDEX = os.getenv("CRAWL_INDEX", "/data/index.json")
+EXPLANATIONS = os.getenv("CRAWL_EXPLANATIONS", "/data/explanations.json")
+AI_URL = os.getenv("CRAWL_AI_URL", "http://ai:8000")
+WARM_LIMIT = os.getenv("CRAWL_WARM_LIMIT", "120")
+WARM_BUDGET = os.getenv("CRAWL_WARM_BUDGET_SECONDS", "1800")
 SEED = os.getenv("CRAWL_SEED", "/seed/listings.seed.jsonl")
 
 
@@ -48,6 +52,14 @@ def bootstrap() -> None:
     log(f"seeded {RAW} from {SEED} ({raw.stat().st_size / 1e6:.1f} MB)")
 
 
+def warm_explanations() -> None:
+    rc = run([sys.executable, "warm_explanations.py", "--index", INDEX,
+              "--out", EXPLANATIONS, "--ai", AI_URL,
+              "--limit", WARM_LIMIT, "--budget-seconds", WARM_BUDGET])
+    if rc != 0:
+        log(f"explanation warming exited {rc}; the API falls back to on-demand")
+
+
 def rebuild_only() -> None:
     """Rebuild the index from raw data already on disk, without crawling.
 
@@ -59,6 +71,8 @@ def rebuild_only() -> None:
     rc = run([sys.executable, "build_index.py", "--raw", RAW, "--out", INDEX])
     if rc != 0:
         log(f"startup rebuild failed ({rc}); the API keeps serving the previous index")
+        return
+    warm_explanations()
 
 
 def cycle() -> None:
@@ -69,6 +83,11 @@ def cycle() -> None:
     rc = run([sys.executable, "build_index.py", "--raw", RAW, "--out", INDEX])
     if rc != 0:
         log(f"index build failed ({rc}); the API keeps serving the previous index")
+        return
+    # Explanations take ~10s each on CPU, which is fine here and unacceptable in
+    # a request. Warming the top specs after every rebuild keeps «چرا این؟»
+    # instant for everything a visitor sees first.
+    warm_explanations()
 
 
 def main() -> int:

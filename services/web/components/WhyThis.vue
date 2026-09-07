@@ -5,6 +5,7 @@ interface ExplainResponse {
   text: string
   source: 'llm' | 'fallback' | 'unavailable' | 'budget_exceeded'
   cached?: boolean
+  precomputed?: boolean
   rejected_numbers?: number[]
   usage?: { provider: string, model: string, latency_ms: number, cost_usd: number } | null
   total_ms?: number
@@ -47,14 +48,24 @@ const provenance = computed(() => {
 
 <template>
   <div>
-    <p v-if="pending" class="text-[.86rem] text-ink-3">در حال نوشتن توضیح…</p>
+    <p v-if="pending" class="flex items-center gap-2 text-[.86rem] text-ink-3">
+      <span class="inline-block size-3 animate-spin rounded-full border-2 border-ink-3/30 border-t-ink-3" aria-hidden="true" />
+      در حال نوشتن توضیح… (برای خودروهای کم‌بازدید چند ثانیه طول می‌کشد)
+    </p>
 
     <template v-else-if="data?.text">
       <p class="text-[.92rem] leading-8 text-ink">{{ data.text }}</p>
 
       <div class="mt-3 flex flex-wrap items-center gap-2 text-[.68rem]">
         <span class="rounded-full border px-2.5 py-0.5" :class="provenance.tone">{{ provenance.label }}</span>
-        <span v-if="data.cached" class="rounded-full border border-white/[.12] bg-surface-2 px-2.5 py-0.5 text-ink-3">از کش</span>
+        <span
+          v-if="data.precomputed"
+          class="rounded-full border border-white/[.12] bg-surface-2 px-2.5 py-0.5 text-ink-3"
+        >از پیش آماده‌شده</span>
+        <span
+          v-else-if="data.cached"
+          class="rounded-full border border-white/[.12] bg-surface-2 px-2.5 py-0.5 text-ink-3"
+        >از کش</span>
         <span v-if="data.usage" class="font-mono text-ink-3" dir="ltr">
           {{ data.usage.model }} · {{ Math.round(data.usage.latency_ms) }}ms · ${{ data.usage.cost_usd.toFixed(5) }}
         </span>

@@ -71,7 +71,15 @@ func main() {
 	stopWatch := make(chan struct{})
 	go store.Watch(30*time.Second, stopWatch)
 
-	mux.Handle("/", server.New(store, log))
+	explanationsPath := os.Getenv("KHODROBIN_EXPLANATIONS")
+	if explanationsPath == "" {
+		explanationsPath = "/data/explanations.json"
+	}
+	explains := index.NewExplanations(explanationsPath, log)
+	go explains.Watch(30*time.Second, stopWatch)
+	log.Info("explanations loaded", "path", explanationsPath, "count", explains.Count())
+
+	mux.Handle("/", server.New(store, explains, log))
 
 	srv := &http.Server{
 		Addr:              addr,

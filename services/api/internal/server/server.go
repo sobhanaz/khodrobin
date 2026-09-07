@@ -19,14 +19,16 @@ import (
 var uiFS embed.FS
 
 type Server struct {
-	store *index.Store
-	log   *slog.Logger
-	mux   *http.ServeMux
-	ai    *explainClient
+	store    *index.Store
+	explains *index.Explanations
+	log      *slog.Logger
+	mux      *http.ServeMux
+	ai       *explainClient
 }
 
-func New(store *index.Store, log *slog.Logger) *Server {
-	s := &Server{store: store, log: log, mux: http.NewServeMux(), ai: newExplainClient()}
+func New(store *index.Store, explains *index.Explanations, log *slog.Logger) *Server {
+	s := &Server{store: store, explains: explains, log: log,
+		mux: http.NewServeMux(), ai: newExplainClient()}
 	s.routes()
 	return s
 }
@@ -110,5 +112,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"built_at":  idx.BuiltAt,
 		"loaded_at": idx.LoadedAt,
 		"offers":    idx.TotalOffers(),
+		"explanations": map[string]any{
+			"warmed":   s.explains.Count(),
+			"built_at": s.explains.BuiltAt(),
+		},
 	})
 }

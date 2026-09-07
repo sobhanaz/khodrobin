@@ -80,6 +80,23 @@ func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Precomputed by the crawler for the specs a visitor sees first. Serving
+	// from memory turns a ten-second wait into a few hundred microseconds; the
+	// long tail still falls through to on-demand generation below.
+	if pre, ok := s.explains.Get(key); ok && pre.Text != "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"key":              key,
+			"text":             pre.Text,
+			"source":           pre.Source,
+			"cached":           true,
+			"precomputed":      true,
+			"rejected_numbers": pre.RejectedNumbers,
+			"rejected_topics":  pre.RejectedTopics,
+			"usage":            pre.Usage,
+		})
+		return
+	}
+
 	start := time.Now()
 	out, err := s.ai.explain(r.Context(), *spec)
 	ms := time.Since(start).Seconds() * 1000
