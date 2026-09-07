@@ -816,31 +816,32 @@ Upload to **Aparat** (Iran-reachable, no login) as primary, with an unlisted You
 
 ---
 
-## 21. Scoring self-check before you submit *(current checklist — the video is the open item)*
+## 21. Scoring self-check *(current — ✅ done, ⬜ open)*
 
-- [ ] Real data, 3 sources, refreshed on a schedule, raw rows retained
-- [ ] One physical car → one row → three seller prices, visible on the landing result
-- [ ] Price-freshness flag **and** a data-contradiction flag, both visible
-- [ ] Persian free-text → validated intent JSON, with a deterministic fallback and editable chips
-- [ ] 4 ranking modes with a visible score breakdown
-- [ ] LLM explanation constrained to input facts, with a demonstrated hallucination guard
-- [ ] Prompt-injection guard demoed against a hostile ad
-- [ ] `make eval` with ≥50 golden intents, accuracy + cost + latency in the README **and** in the video
-- [ ] Nightly eval cron with a Telegram regression alert
-- [ ] Cost circuit-breaker with a daily ceiling
-- [ ] Deployed on an **Iran-reachable** host, verified on mobile data with Wi-Fi off
-- [ ] Vercel mirror for non-Iran viewers, both links labelled
-- [ ] Seed data in the repo so the demo cannot fail
-- [ ] Sentry + Prometheus + Grafana + Uptime Kuma live, dashboard screenshotted
-- [ ] Backups running, restore verified once and dated in the README
-- [ ] CI: lint + test + eval gate + Trivy, all green; deploy on tag with auto-rollback
-- [ ] 60+ conventional commits, PR history, tagged releases, `CRAWLING.md`
-- [ ] Lighthouse ≥ 90 performance and accessibility, zero critical axe violations
-- [ ] README maps the five rubric lines to five modules
-- [ ] Video ≤ 4:50, Persian, plays without login, tested on mobile
-- [ ] Demo form submitted, success toast screenshotted
-
----
+- [x] Real data, **4 sources**, refreshed every 3 hours, raw rows retained
+- [x] Duplicate re-crawls collapsed before anything counts them (40% of captures)
+- [x] One spec → every offer → real price distribution, with per-source links
+- [x] Price-freshness, contradiction **and** price-outlier flags, shown not repaired
+- [x] Flagged offers sink below clean ones and never lead an explanation
+- [x] Median suppressed as market truth below three offers
+- [x] Persian free-text → validated intent, with a deterministic parser that always runs
+- [x] 4 ranking modes with a visible score breakdown
+- [x] LLM explanation with a four-axis guard, and a fallback that always passes it
+- [x] Guard demonstrably catches a real model fabrication
+- [x] `make eval` with 92 golden queries, gated in CI at per-set thresholds
+- [x] Cost, latency and provider reported per call; hard daily ceiling
+- [x] Model switchable (Ollama ↔ cloud) via one config line
+- [x] Deployed, one-command run, seeded data so the demo cannot be empty
+- [x] Readiness probe that can actually fail; deploy gate that probes what a visitor opens
+- [x] Per-car SSR pages, generated sitemap and robots, `schema.org/Car` markup
+- [x] Accounts for saved searches and price alerts; search never gated
+- [x] Admin dashboard leading with pipeline health
+- [x] README, DECISIONS (18), HANDOFF; clean commit history
+- [ ] **Video ≤ 4:50, Persian, plays without login, tested on mobile**
+- [ ] Live link tested from Iranian mobile data with Wi-Fi off
+- [ ] Monitoring and alerting (metrics exposed, nothing scrapes them yet)
+- [ ] `CRAWLING.md` and `SCALING.md`
+- [ ] Demo form submitted, success screenshotted
 
 ## 22. The honest risk register
 
