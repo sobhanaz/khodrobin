@@ -41,3 +41,47 @@ def test_guard_version_read_from_health(body):
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body)),
                       base_url="http://ai") as c:
         assert guard_version(c) == body.get("guard_version", "")
+
+
+def test_entries_outside_the_limit_expire_when_the_guard_changes(tmp_path):
+    """The carry-forward loop used to keep every prior entry unconditionally.
+
+    Its comment said "already known and still valid" while checking nothing, so
+    37 live explanations written under an older guard could never expire: the
+    fingerprint was only ever consulted for specs inside the top-N window.
+    """
+    import json
+    import warm_explanations as w
+
+    spec = {"key": "outside", "median_price": 500_000_000, "offer_count": 7,
+            "min_price": 420_000_000, "max_price": 610_000_000,
+            "source_count": 1}
+    index = tmp_path / "index.json"
+    index.write_text(json.dumps({"specs": [spec]}), encoding="utf-8")
+
+    out = tmp_path / "explanations.json"
+    out.write_text(json.dumps({"explanations": {"outside": {
+        "text": "قدیمی", "source": "llm",
+        # Written under an older guard: four fields, no guard version.
+        "fingerprint": "500000000:7:420000000:610000000",
+    }}}), encoding="utf-8")
+
+    # limit=0 puts the spec outside the window entirely, which is exactly the
+    # case the old loop could not reach.
+    w.warm(index, out, "http://ai.invalid", limit=0, budget_seconds=0)
+    assert json.loads(out.read_text(encoding="utf-8"))["explanations"] == {}
+
+
+def test_entry_for_a_spec_that_left_the_index_is_dropped(tmp_path):
+    """Otherwise the file accretes answers about cars nobody can look up."""
+    import json
+    import warm_explanations as w
+
+    index = tmp_path / "index.json"
+    index.write_text(json.dumps({"specs": []}), encoding="utf-8")
+    out = tmp_path / "explanations.json"
+    out.write_text(json.dumps({"explanations": {"gone": {
+        "text": "x", "source": "llm", "fingerprint": "1:1:1:1:abc"}}}), encoding="utf-8")
+
+    w.warm(index, out, "http://ai.invalid", limit=10, budget_seconds=0)
+    assert json.loads(out.read_text(encoding="utf-8"))["explanations"] == {}

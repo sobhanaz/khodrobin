@@ -89,7 +89,9 @@ def guard_version(client: httpx.Client) -> str:
 def warm(index_path: pathlib.Path, out_path: pathlib.Path, ai_url: str,
          limit: int, budget_seconds: float) -> int:
     index = json.loads(index_path.read_text(encoding="utf-8"))
-    specs = rank_for_warming(index.get("specs", []))[:limit]
+    all_specs = index.get("specs", [])
+    by_key = {s["key"]: s for s in all_specs}
+    specs = rank_for_warming(all_specs)[:limit]
     existing = load_existing(out_path)
 
     fresh: dict[str, dict] = {}
@@ -136,11 +138,29 @@ def warm(index_path: pathlib.Path, out_path: pathlib.Path, ai_url: str,
             }
             generated += 1
 
-    # Anything already known and still valid is kept even if it fell outside
-    # this run's limit — throwing away good work to match an arbitrary cap
-    # would make every run slower than the last.
+    # Anything already known is kept even if it fell outside this run's limit,
+    # because throwing away good work to match an arbitrary cap would make every
+    # run slower than the last. But "still valid" has to be checked, not
+    # assumed: this loop used to carry every prior entry forward unconditionally
+    # while its comment claimed otherwise, so 37 explanations written under an
+    # older guard were immortal — the top-N window was the only place the
+    # fingerprint was ever consulted, and nothing outside it could expire.
+    #
+    # Dropping is safe. A spec with no warm entry falls back to on-demand
+    # generation, which is slower on first view and correct. On a product whose
+    # claim is that its numbers can be trusted, that is the right way round.
+    kept = dropped = 0
     for key, prior in existing.items():
-        fresh.setdefault(key, prior)
+        if key in fresh:
+            continue
+        spec = by_key.get(key)
+        # A spec that has left the index takes its explanation with it, or the
+        # file grows forever with answers about cars nobody can look up.
+        if spec is None or prior.get("fingerprint") != spec_fingerprint(spec, guard):
+            dropped += 1
+            continue
+        fresh[key] = prior
+        kept += 1
 
     payload = {
         "built_at": datetime.now(timezone.utc).isoformat(),
@@ -155,7 +175,8 @@ def warm(index_path: pathlib.Path, out_path: pathlib.Path, ai_url: str,
     for v in fresh.values():
         by_source[v.get("source", "?")] = by_source.get(v.get("source", "?"), 0) + 1
     log(f"warmed: generated={generated} reused={reused} failed={failed} "
-        f"total={len(fresh)} sources={by_source} -> {out_path}")
+        f"carried={kept} expired={dropped} total={len(fresh)} "
+        f"sources={by_source} -> {out_path}")
     return 0
 
 
