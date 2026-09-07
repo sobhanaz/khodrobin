@@ -7,12 +7,36 @@ interface ExplainResponse {
   cached?: boolean
   precomputed?: boolean
   rejected_numbers?: number[]
+  rejected_topics?: string[]
   usage?: { provider: string, model: string, latency_ms: number, cost_usd: number } | null
   total_ms?: number
 }
 
 const data = ref<ExplainResponse | null>(null)
 const pending = ref(false)
+
+// Why the guard fired, in the reader's language. Reasons are named rather than
+// summarised: "the answer was rejected" asks for trust, "the model said 116%
+// and no offer supports it" earns it.
+const GUARD_REASONS: Record<string, string> = {
+  loss_framing_on_price: 'مدل ارزان‌ترین قیمت را چیزی جا زد که از دست می‌دهی.',
+  loss_framing_on_mileage: 'مدل کمترین کارکرد را چیزی جا زد که از دست می‌دهی.',
+}
+
+const rejection = computed(() => {
+  const d = data.value
+  if (!d) return null
+  const parts: string[] = []
+  if (d.rejected_numbers?.length)
+    parts.push(`مدل عددی گفت که در داده‌ی ورودی نبود (${d.rejected_numbers.join('، ')}).`)
+  for (const t of d.rejected_topics ?? [])
+    // An unknown reason still gets shown. A guard axis added later should not
+    // silently produce an empty panel because nobody updated this map.
+    parts.push(GUARD_REASONS[t] ?? (t.startsWith('source:')
+      ? `مدل به «${t.slice(7)}» ارجاع داد که آگهی‌ای از آن اینجا نیست.`
+      : `ادعای بررسی‌نشده: ${t}.`))
+  return parts.length ? parts.join(' ') : null
+})
 
 /**
  * Fetched on demand rather than with the search results.
@@ -73,15 +97,14 @@ const provenance = computed(() => {
 
       <!-- When the guard fires, say so and show what was rejected. A product
            whose claim is trustworthy numbers should demonstrate the mechanism,
-           not hide it. -->
+           not hide it — and "rejected" with no reason shown is hiding it. The
+           coherence axis rejects sentences containing no invented number at
+           all, so a numbers-only panel would have gone blank for exactly the
+           failures it was added to catch. -->
       <p
-        v-if="data.rejected_numbers?.length"
-        class="mt-2 rounded-lg border border-warn/20 bg-warn/[.12] px-3 py-2 text-[.78rem] text-warn"
-      >
-        ⚑ مدل عددی گفت که در داده‌ی ورودی نبود
-        (<span class="font-mono" dir="ltr">{{ data.rejected_numbers.join(', ') }}</span>)،
-        پس پاسخش رد شد و متن قالبی جایگزین شد.
-      </p>
+        v-if="rejection"
+        class="mt-2 rounded-lg border border-warn/20 bg-warn/[.12] px-3 py-2 text-[.78rem] leading-6 text-warn"
+      >⚑ {{ rejection }} پس پاسخ مدل رد شد و متن قالبی جایگزین شد.</p>
     </template>
 
     <p v-else class="text-[.86rem] text-ink-3">توضیحی در دسترس نیست.</p>
