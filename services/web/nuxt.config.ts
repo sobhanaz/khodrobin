@@ -22,11 +22,15 @@ export default defineNuxtConfig({
         },
       ],
       link: [
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        // Self-hosted, not Google Fonts. The audience for this site — and the
+        // reviewer it was built for — is in Iran, where fonts.gstatic.com is
+        // routinely slow or unreachable. A blocked stylesheet does not fail
+        // loudly; it silently drops the page to the Tahoma fallback, which is
+        // the one outcome a Persian typographic layout cannot survive.
+        // One variable file also replaces five weight requests.
         {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;900&display=swap',
+          rel: 'preload', as: 'font', type: 'font/woff2',
+          href: '/fonts/Vazirmatn.woff2', crossorigin: '',
         },
       ],
     },

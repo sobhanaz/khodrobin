@@ -63,9 +63,13 @@ const describedBy = computed(() => {
                placeholder:text-ink-3
                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         :class="[
+          // Red is the error colour, so it cannot also be the focus colour.
+          // Before this, an autofocused email field arrived outlined in red on a
+          // page nobody had typed into yet, and a genuinely invalid field looked
+          // exactly like a merely selected one.
           error
-            ? 'border-accent/60 focus-visible:outline-accent'
-            : 'border-white/[.12] focus:border-accent/55 focus:shadow-[0_0_0_4px_rgba(255,46,77,.12)] focus-visible:outline-accent',
+            ? 'border-accent/60 focus:shadow-[0_0_0_4px_rgba(255,46,77,.14)] focus-visible:outline-accent'
+            : 'border-white/[.12] focus:border-focus/60 focus:shadow-[0_0_0_4px_rgba(107,116,230,.16)] focus-visible:outline-focus',
           // Physical, not logical: the adornment is pinned to the physical left
           // edge, and this field renders LTR content inside an RTL page — a
           // logical ps-* would follow the text direction and reserve the gap on

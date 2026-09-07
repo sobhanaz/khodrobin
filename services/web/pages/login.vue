@@ -50,6 +50,14 @@ async function submit() {
           label="رمز عبور"
           autocomplete="current-password"
         />
+
+        <!-- Informational here, never a gate. The submit button below is
+             deliberately not wired to `satisfied`: every account created before
+             this policy existed satisfies only the length rule, the first admin
+             account among them, and a login form that enforced the new rules
+             would lock out the people who have been here longest — with no way
+             to fix it, because fixing it requires logging in. -->
+        <PasswordRules :password="form.password" :enforcing="false" />
         <!-- Directly beneath the field it relates to. Someone reaching for this
              has just failed to remember the thing immediately above it. -->
         <NuxtLink

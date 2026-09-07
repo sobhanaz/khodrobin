@@ -29,8 +29,53 @@ onMounted(() => {
   hoverable.value = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 })
 
-function show() { if (hoverable.value) open.value = true }
+const anchor = ref<HTMLElement | null>(null)
+const pos = ref({ top: 0, left: 0 })
+
+const PEEK_W = 288 // must match the w-72 below
+const GUTTER = 12
+
+/**
+ * Positioned in the viewport, not in the card.
+ *
+ * As an absolutely-positioned child anchored `right-0`, this panel hung 288px
+ * to the LEFT of its badge. For any badge near the left of the screen — which
+ * in an RTL layout is most of them — that ran off the edge, and a live card
+ * showed the price of a Peugeot 207 as «۰,۰۰۰ تومان». On a price-comparison
+ * product a clipped price is not a layout bug, it is a wrong number.
+ *
+ * `fixed` also escapes the `overflow-hidden` on the card, which was clipping
+ * whatever the viewport had not already cut off.
+ */
+function place() {
+  const el = anchor.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  // Prefer alignment with the badge's right edge, then clamp into the viewport
+  // so the panel is always fully readable, wherever the badge happens to sit.
+  const wanted = r.right - PEEK_W
+  const maxLeft = window.innerWidth - PEEK_W - GUTTER
+  pos.value = { top: r.top, left: Math.round(Math.min(Math.max(GUTTER, wanted), maxLeft)) }
+}
+
+function show() {
+  if (!hoverable.value) return
+  place()
+  open.value = true
+}
 function hide() { open.value = false }
+
+// Scrolling with the pointer still down would otherwise leave the panel behind,
+// pointing at nothing. Passive listeners on capture catch scrolls in any
+// ancestor, not just the window.
+onMounted(() => {
+  window.addEventListener('scroll', hide, { passive: true, capture: true })
+  window.addEventListener('resize', hide, { passive: true })
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', hide, true)
+  window.removeEventListener('resize', hide)
+})
 
 const freshness = computed(() => {
   const seen = best.value?.seen_at
@@ -51,7 +96,7 @@ const freshness = computed(() => {
     :title="`${label}: آگهی‌ای برای این خودرو ندارد`"
   >{{ label }}</span>
 
-  <span v-else class="relative inline-block" @mouseenter="show" @mouseleave="hide">
+  <span v-else ref="anchor" class="relative inline-block" @mouseenter="show" @mouseleave="hide">
     <a
       :href="best!.url"
       target="_blank"
@@ -73,8 +118,10 @@ const freshness = computed(() => {
       <span
         v-if="open"
         role="tooltip"
-        class="absolute bottom-full right-0 z-40 mb-2 block w-72 rounded-xl border border-white/[.12]
+        class="fixed z-50 block w-72 max-w-[calc(100vw-1.5rem)] -translate-y-[calc(100%+8px)]
+               rounded-xl border border-white/[.12]
                bg-surface p-3 text-right shadow-[0_24px_60px_-24px_#000]"
+        :style="{ top: `${pos.top}px`, left: `${pos.left}px` }"
       >
         <span class="flex gap-3">
           <CarImage :src="best!.image ?? null" :alt="best!.title || label" class="!w-20" />

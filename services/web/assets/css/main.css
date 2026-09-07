@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* One variable file, every weight, served from our own origin. See the note in
+   nuxt.config.ts about why this is not loaded from Google. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Design tokens. Dark and technical, in Torob's register without copying it:
    a hard red for action, green for corroboration, amber for doubt. */
 @theme {
@@ -14,10 +24,55 @@
   --color-good: #3ddc84;
   --color-warn: #ffb02e;
 
+  /* Focus is deliberately outside the semantic set.
+     The accent is red, and red means "wrong" to everyone. Using it for the
+     focus ring meant an autofocused, untouched email field arrived on screen
+     already looking rejected — and a field that really was invalid looked
+     identical to one that was merely selected. Focus is a location; error is a
+     verdict. They cannot share a colour.
+     The hue is Linear's lavender-blue, chosen because it collides with nothing
+     else here: not the red for error, not the green for corroboration, not the
+     amber for doubt. */
+  --color-focus: #6b74e6;
+
   --font-sans: Vazirmatn, "IRANSansX", "IRANSans", Tahoma, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* A Persian type scale, not a Latin one wearing a Persian font.
+     Two things the usual scales get wrong here, both borrowed uncritically
+     from English display type:
+     1. NEGATIVE TRACKING. Latin display type tightens to -1px or -3px. Persian
+        letters JOIN — tightening pulls the connecting strokes into each other
+        and the word stops being legible as a word. Tracking stays at 0.
+     2. LINE HEIGHT. Persian carries ascenders, descenders and dots above and
+        below the baseline that Latin does not. 1.5 crowds them; the body scale
+        below sits at 1.8, and even display type does not go under 1.3.
+     Sizes are clamped so a headline never needs a breakpoint to stay sane. */
+  --text-display: clamp(2rem, 5.5vw, 3.75rem);
+  --text-display--line-height: 1.32;
+  --text-display--letter-spacing: 0;
+  --text-display--font-weight: 800;
+
+  --text-title: clamp(1.5rem, 3.4vw, 2.35rem);
+  --text-title--line-height: 1.4;
+  --text-title--letter-spacing: 0;
+  --text-title--font-weight: 700;
+
+  --text-head: 1.3rem;
+  --text-head--line-height: 1.5;
+  --text-head--font-weight: 700;
+
+  --text-lead: 1.05rem;
+  --text-lead--line-height: 1.85;
+
+  --text-cap: 0.82rem;
+  --text-cap--line-height: 1.75;
+
+  /* Vertical rhythm. Section padding is one decision, made once, so eight
+     sections cannot each invent their own idea of how much air they deserve. */
+  --space-section: clamp(3.5rem, 8vw, 7rem);
 }
 
 @layer base {
