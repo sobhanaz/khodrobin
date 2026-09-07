@@ -25,6 +25,16 @@ MAX_KM_PER_YEAR = 60_000
 
 WORKED_ON = {"رنگ‌شدگی", "تمام‌رنگ", "تعویض"}
 
+# Listings that are not a car you can drive away.
+#
+# A «حواله» is an allocation certificate and a «پیش‌فروش» is a car that does not
+# exist yet; both are priced far below a real one because they are not the same
+# product. The price-ratio check misses them constantly — one sat at 0.41 of its
+# cluster median, just inside a 0.4 threshold — while the seller had written
+# «حواله» in the title. A stated fact beats a statistical guess about it.
+NOT_A_CAR_YET = ("حواله", "پیش فروش", "پیش‌فروش", "پیش خرید", "پیش‌خرید",
+                 "مشارکت در تولید", "قرعه کشی", "قرعه‌کشی", "ثبت نام", "ثبت‌نام")
+
 
 def flags(car: dict) -> list[dict[str, str]]:
     """Return zero or more {code, message} findings for one canonical car."""
@@ -57,6 +67,16 @@ def flags(car: dict) -> list[dict[str, str]]:
             "code": "mileage_vs_age",
             "message": f"میانگین {km // age:,} کیلومتر در سال برای مدل {year} غیرعادی است.",
         })
+
+    title = (car.get("title") or "").replace("\u200c", " ")
+    for phrase in NOT_A_CAR_YET:
+        if phrase.replace("\u200c", " ") in title:
+            found.append({
+                "code": "not_a_car_yet",
+                "message": ("این آگهی حواله یا پیش‌فروش است، نه خودروی آماده‌ی تحویل؛ "
+                            "قیمتش با آگهی‌های دیگر قابل مقایسه نیست."),
+            })
+            break
 
     if car.get("price_toman") is None:
         found.append({"code": "no_price", "message": "قیمت معتبری اعلام نشده است."})

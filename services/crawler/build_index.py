@@ -39,7 +39,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from extract import GEARBOX, resolve, spec_key  # noqa: E402
 from normalize import normalize  # noqa: E402
 from plausibility import flags  # noqa: E402
-from vocab import BRANDS, MODELS  # noqa: E402
+from vocab import BRANDS, MODELS, TRIMS  # noqa: E402
 
 SOURCE_FA = {"divar": "دیوار", "bama": "باما", "hamrah": "همراه‌مکانیک", "khodro45": "خودرو۴۵"}
 GEARBOX_FA = {"at": "اتوماتیک", "mt": "دنده‌ای", "na": None}
@@ -134,11 +134,28 @@ def build(raw_path: pathlib.Path) -> dict:
                     })
         brand_fa = BRANDS.get(brand, (brand, ()))[0]
         model_fa = MODELS.get((brand, model), (model, ()))[0]
-        # A base variant repeats the brand as its own name («کوییک کوییک»).
-        # Blank the model so the display reads as a person would say it.
+
+        # Say the car's name once.
+        #
+        # A base variant repeats the brand as its own name («کوییک کوییک»), and a
+        # sub-model carries it as a prefix — «دنا» + «دنا پلاس» + trim «plus»
+        # rendered as «دنا دنا پلاس · plus», which is three names for one car.
         if model_fa == brand_fa:
             model_fa = ""
+        elif brand_fa and model_fa.startswith(brand_fa + " "):
+            model_fa = model_fa[len(brand_fa) + 1:]
 
+        # Drop a trim the model name already states. The trim slug is Latin
+        # («plus») and the model name is Persian («پلاس»), so a string compare
+        # misses it — the alias table is what knows they are the same word.
+        trim_display = None if trim == "base" else trim
+        if trim_display:
+            for alias in TRIMS.get(trim_display, ()):
+                if alias and alias in model_fa:
+                    trim_display = None
+                    break
+
+        clean_prices = sorted(o["price"] for o in offers if not o.get("flags")) or prices
         image = next((o["image"] for o in sorted(offers, key=lambda o: o["price"]) if o.get("image")), None)
 
         specs.append({
@@ -148,7 +165,7 @@ def build(raw_path: pathlib.Path) -> dict:
             "brand_fa": brand_fa,
             "model": model,
             "model_fa": model_fa,
-            "trim": None if trim == "base" else trim,
+            "trim": trim_display,
             "gearbox": gearbox,
             "gearbox_fa": GEARBOX_FA.get(gearbox),
             "year": int(year),
@@ -160,8 +177,12 @@ def build(raw_path: pathlib.Path) -> dict:
             # it. The UI shows a range instead.
             "median_price": median,
             "median_reliable": len(prices) >= 3,
-            "min_price": prices[0],
-            "max_price": prices[-1],
+            # The range shown describes offers a buyer can actually compare.
+            # One flagged allocation certificate at 220,000,000 stretched a
+            # Dena Plus card from there to 3,570,000,000 — a bar that was mostly
+            # empty space describing a car nobody was selling.
+            "min_price": clean_prices[0],
+            "max_price": clean_prices[-1],
             "flag_count": sum(len(o["flags"]) for o in offers),
             # Cheapest first, but a flagged offer sinks below every clean one.
             #

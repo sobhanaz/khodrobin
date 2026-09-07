@@ -28,3 +28,28 @@ def test_ordinary_used_car_is_not_flagged():
 def test_missing_price_is_reported():
     car = {"mileage_km": 50_000, "year_jalali": 1400, "body_status": None, "price_toman": None}
     assert "no_price" in {f["code"] for f in pl.flags(car)}
+
+
+def test_an_allocation_certificate_is_not_a_car():
+    # A «حواله» sat at 0.41 of its cluster median — just inside a 0.4 ratio
+    # threshold — while the seller had written what it was in the title. A
+    # stated fact beats a statistical guess about it.
+    car = {"title": "حواله دنا پلاس دنده تحویل آبان و آذر", "mileage_km": 0,
+           "year_jalali": 1405, "body_status": None, "price_toman": 1_025_000_000}
+    codes = {f["code"] for f in pl.flags(car)}
+    assert "not_a_car_yet" in codes
+
+
+def test_presale_variants_are_caught():
+    for title in ("پیش فروش شاهین", "پیش‌فروش تارا V4", "ثبت نام کوییک",
+                  "مشارکت در تولید ساینا", "قرعه‌کشی پژو ۲۰۷"):
+        car = {"title": title, "mileage_km": 0, "year_jalali": 1405,
+               "body_status": None, "price_toman": 900_000_000}
+        assert "not_a_car_yet" in {f["code"] for f in pl.flags(car)}, title
+
+
+def test_an_ordinary_listing_is_not_flagged_as_an_allocation():
+    # «تحویل فوری» is a normal thing to say about a car you have.
+    car = {"title": "دنا پلاس ۶ دنده مدل ۱۴۰۵ تحویل فوری", "mileage_km": 1_200,
+           "year_jalali": 1405, "body_status": "بدون رنگ", "price_toman": 2_440_000_000}
+    assert pl.flags(car) == []
