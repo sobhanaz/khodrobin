@@ -13,7 +13,17 @@ function toggle(panel: Panel) {
 const delay = computed(() => Math.min(props.index * 45, 400))
 
 const ALL_SOURCES = ['دیوار', 'باما', 'همراه‌مکانیک', 'خودرو۴۵']
-const present = computed(() => new Set(props.spec.offers.map(o => o.source_fa)))
+
+/** Offers grouped by marketplace, cheapest first, so each badge can link and preview. */
+const bySource = computed(() => {
+  const map = new Map<string, typeof props.spec.offers>()
+  for (const o of [...props.spec.offers].sort((a, b) => a.price - b.price)) {
+    const list = map.get(o.source_fa) ?? []
+    list.push(o)
+    map.set(o.source_fa, list)
+  }
+  return map
+})
 
 const heading = computed(() => {
   const s = props.spec
@@ -36,7 +46,11 @@ const mileageBand = computed(() => {
            hover:-translate-y-0.5 hover:border-white/[.12] hover:shadow-[0_18px_44px_-28px_#000]"
     :style="{ animationDelay: `${delay}ms` }"
   >
-    <div class="flex items-start gap-4 p-4 sm:p-5">
+    <!-- Below sm the price block drops under the details instead of being
+         squeezed beside them; a 375px phone cannot hold three columns and a
+         13-digit number without wrapping mid-figure. -->
+    <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:gap-4 sm:p-5">
+      <div class="flex items-start gap-3 sm:contents">
       <CarImage :src="spec.image ?? null" :alt="heading" />
 
       <div class="min-w-0 flex-1">
@@ -58,21 +72,21 @@ const mileageBand = computed(() => {
         </div>
 
         <div class="mt-2 flex flex-wrap gap-1.5">
-          <span
+          <SourceBadge
             v-for="s in ALL_SOURCES"
             :key="s"
-            class="rounded-full border px-2.5 py-0.5 text-[.7rem]"
-            :class="present.has(s)
-              ? 'border-good/30 bg-good/[.12] text-good'
-              : 'border-white/[.12] bg-surface-2 text-ink-3'"
-          >{{ s }}</span>
+            :label="s"
+            :offers="bySource.get(s) ?? []"
+          />
         </div>
       </div>
 
-      <div class="shrink-0 text-left" dir="ltr">
-        <div class="text-right font-sans text-[.68rem] text-ink-3" dir="rtl">میانه‌ی بازار</div>
-        <div>
-          <span class="font-mono text-[1.34rem] font-bold tabular-nums tracking-tight">{{ f.money(spec.median_price) }}</span>
+      </div>
+
+      <div class="shrink-0 sm:text-left">
+        <div class="font-sans text-[.68rem] text-ink-3">میانه‌ی بازار</div>
+        <div dir="ltr" class="text-right sm:text-left">
+          <span class="font-mono text-[1.15rem] font-bold tabular-nums tracking-tight sm:text-[1.34rem]">{{ f.money(spec.median_price) }}</span>
           <span class="ms-1 font-sans text-[.72rem] text-ink-3">تومان</span>
         </div>
       </div>
