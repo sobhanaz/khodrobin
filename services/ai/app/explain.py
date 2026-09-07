@@ -297,6 +297,50 @@ def _supported(value: float, allowed: set[float]) -> bool:
     return any(abs(value - a) <= EPSILON for a in allowed)
 
 
+# Phrases that frame something as given up. The second sentence is supposed to
+# name a genuine trade-off, so these are correct there — but only when applied to
+# something the top offer is actually worse at.
+_LOSS_FRAMING = ("از دست می‌دهی", "از دست میدهی", "از دست دادن", "را از دست",
+                 "محروم می‌شوی", "چشم‌پوشی")
+
+
+def incoherent_tradeoff(text: str, facts: dict) -> list[str]:
+    """Loss framing applied to something the top offer is best at.
+
+    Measured on real output: 10% of model explanations used loss framing, and
+    several were nonsense — «کارکرد صفر کیلومتر را از دست می‌دهی», you lose the
+    zero kilometres. Every number in that sentence is true, so all four factual
+    axes pass it. Truth and sense are different properties.
+
+    The cause is the prompt asking for a trade-off in the second sentence. When
+    the cheapest offer is also the best on everything else there is no trade-off,
+    and a model told to produce one will invent it rather than say so.
+    """
+    flat = text.replace("\u200c", " ")
+    if not any(p.replace("\u200c", " ") in flat for p in _LOSS_FRAMING):
+        return []
+
+    offers = facts.get("offers", [])
+    if len(offers) < 2:
+        return []
+    best = offers[0]
+    problems: list[str] = []
+
+    # The top offer is the cheapest by construction, so describing its price as
+    # something surrendered is always wrong.
+    if "قیمت" in flat or "تومان" in flat:
+        prices = [o.get("price") for o in offers if o.get("price") is not None]
+        if prices and best.get("price") == min(prices):
+            problems.append("loss_framing_on_price")
+
+    mileages = [o.get("mileage_km") for o in offers if o.get("mileage_km") is not None]
+    if mileages and best.get("mileage_km") == min(mileages) and (
+            "کارکرد" in flat or "کیلومتر" in flat):
+        problems.append("loss_framing_on_mileage")
+
+    return problems
+
+
 def check(text: str, facts: dict) -> tuple[bool, list[float], list[str]]:
     """Verify the explanation against its input.
 
@@ -307,6 +351,8 @@ def check(text: str, facts: dict) -> tuple[bool, list[float], list[str]]:
       percentages  — a position against the median that no offer supports
       topics       — a subject the input never mentioned
       sources      — an offer attributed to a marketplace with no listing here
+      coherence    — a true statement that does not make sense: something the
+                     top offer is best at, described as a sacrifice
 
     Percentages need their own pass because they are small: the numeric check
     ignores anything under IGNORE_BELOW to avoid flagging «۳ منبع», which meant
@@ -320,12 +366,15 @@ def check(text: str, facts: dict) -> tuple[bool, list[float], list[str]]:
     bad_pcts = bad_percentages(text, facts)
     bad_topics = forbidden_claims(text, facts)
     bad_src = bad_sources(text, facts)
+    bad_sense = incoherent_tradeoff(text, facts)
 
-    ok = not (bad_numbers or bad_pcts or bad_topics or bad_src)
+    ok = not (bad_numbers or bad_pcts or bad_topics or bad_src or bad_sense)
     # Percentages surface in the numeric list so callers and the UI keep one
     # "numbers the model made up" channel; sources join the topic channel for
     # the same reason.
-    return ok, sorted(set(bad_numbers) | set(bad_pcts)), bad_topics + [f"source:{s}" for s in bad_src]
+    return (ok,
+            sorted(set(bad_numbers) | set(bad_pcts)),
+            bad_topics + [f"source:{s}" for s in bad_src] + bad_sense)
 
 
 # A mileage gap smaller than this is noise between two used cars, not a reason

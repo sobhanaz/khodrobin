@@ -292,3 +292,45 @@ def test_an_unreliable_median_is_not_quoted_as_market_truth():
     assert "میانه" not in text.split(".")[0], text
     ok, nums, _ = explain.check(text, facts)
     assert ok, nums
+
+
+def test_losing_the_best_mileage_is_caught():
+    # Real model output: «کارکرد صفر کیلومتر را از دست می‌دهی» — you lose the
+    # zero kilometres. Every number is true, so all four factual axes pass it.
+    facts = FACTS | {"offers": [
+        {"source_fa": "دیوار", "price": 828_000_000, "mileage_km": 0, "vs_median_pct": -55.7},
+        {"source_fa": "باما", "price": 1_900_000_000, "mileage_km": 40_000, "vs_median_pct": 2.1},
+    ]}
+    text = "این خودرو با قیمت ۸۲۸,۰۰۰,۰۰۰ تومان ارزان‌ترین است. در عوض، کارکرد صفر کیلومتر را از دست می‌دهی."
+    ok, nums, topics = explain.check(text, facts)
+    assert not ok
+    assert nums == []            # nothing was fabricated
+    assert "loss_framing_on_mileage" in topics
+
+
+def test_losing_the_cheapest_price_is_caught():
+    facts = FACTS | {"offers": [
+        {"source_fa": "دیوار", "price": 800_000_000, "mileage_km": 90_000, "vs_median_pct": -30.0},
+        {"source_fa": "باما", "price": 1_200_000_000, "mileage_km": 40_000, "vs_median_pct": 5.0},
+    ]}
+    ok, _, topics = explain.check("در عوض ۸۰۰,۰۰۰,۰۰۰ تومان قیمت را از دست می‌دهی.", facts)
+    assert not ok
+    assert "loss_framing_on_price" in topics
+
+
+def test_a_genuine_sacrifice_still_reads_as_one():
+    # The top offer really is more worn here, so loss framing about mileage is
+    # correct and must not be rejected.
+    facts = FACTS | {"offers": [
+        {"source_fa": "دیوار", "price": 800_000_000, "mileage_km": 180_000, "vs_median_pct": -30.0},
+        {"source_fa": "باما", "price": 1_200_000_000, "mileage_km": 20_000, "vs_median_pct": 5.0},
+    ]}
+    text = "این خودرو ارزان‌ترین است. در عوض ۱۶۰,۰۰۰ کیلومتر بیشتر کار کرده و عمر لاستیک را از دست می‌دهی."
+    ok, nums, topics = explain.check(text, facts)
+    assert ok, (nums, topics)
+
+
+def test_an_explanation_without_loss_framing_is_untouched():
+    ok, _, topics = explain.check(
+        "این خودرو ارزان‌ترین گزینه است و کمترین کارکرد را هم دارد.", FACTS)
+    assert ok, topics
