@@ -54,7 +54,9 @@ const mileageBand = computed(() => {
       <CarImage :src="spec.image ?? null" :alt="heading" />
 
       <div class="min-w-0 flex-1">
-        <h3 class="text-[1.06rem] font-bold tracking-tight">{{ heading }}</h3>
+        <h3 class="text-[1.06rem] font-bold tracking-tight">
+          <NuxtLink :to="`/car/${spec.key}`" class="transition hover:text-accent">{{ heading }}</NuxtLink>
+        </h3>
 
         <div class="mt-2 flex flex-wrap gap-1.5">
           <span class="rounded-md border border-white/[.07] bg-surface-2 px-2 py-0.5 text-[.74rem] text-ink-2">
