@@ -23,7 +23,21 @@ FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
 
 # Numbers this small are ordinary prose — «دو منبع», «۳ آگهی» — not claims about
 # the car. Checking them produces false alarms without catching anything real.
+#
+# It also used to hide the product's headline claim. Every vs_median_pct is a one
+# or two digit number, so «۴۵٪ زیر میانه» on a car that is 3٪ under was filtered
+# out before the allow-set was ever consulted. Percentages are therefore checked
+# separately below, where their size is irrelevant.
 IGNORE_BELOW = 100
+
+# A number written immediately before ٪, % or «درصد» is a claim about position
+# against the median, and must match one the data supports.
+_PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*(?:٪|%|درصد)")
+
+# Persian and Arabic letters, for word-boundary checks. \b does not work here:
+# Go and Python both treat Persian letters as word characters, but «چک» sits
+# inside «کوچک», so a bare substring test rejects the word for "smaller".
+_PERSIAN_LETTER = r"\u0621-\u064A\u0660-\u0669\u066E-\u06D3\u06F0-\u06F9"
 
 SYSTEM = """تو یک مشاور خرید خودرو هستی. دقیقاً دو جمله‌ی کوتاه فارسی می‌نویسی که توضیح می‌دهد چرا گزینه‌ی اول بهترین انتخاب است.
 
@@ -79,6 +93,74 @@ def digits_in(text: str) -> set[int]:
     return {int(n) for n in numbers_in(text) if n == int(n)}
 
 
+def supported_percentages(facts: dict) -> set[float]:
+    """Percentages the data actually supports.
+
+    The only real percentage here is a position against the median. Anything
+    else the model writes with a ٪ sign is invented, however plausible it looks.
+    """
+    allowed: set[float] = set()
+    for offer in facts.get("offers", []):
+        pct = offer.get("vs_median_pct")
+        if pct is None:
+            continue
+        value = abs(float(pct))
+        allowed.add(value)
+        allowed.add(round(value, 1))
+        # Both neighbours: a person writing about 21.5٪ says «۲۱٪» or «۲۲٪», and
+        # rejecting either would fail correct Persian. The gap this leaves is one
+        # percentage point, which cannot turn a small discount into a large one.
+        allowed.add(float(int(value)))
+        allowed.add(float(int(value) + 1) if value != int(value) else float(int(value)))
+    return allowed
+
+
+def bad_percentages(text: str, facts: dict) -> list[float]:
+    """Percentages stated in the text that no offer supports."""
+    allowed = supported_percentages(facts)
+    out: list[float] = []
+    for raw in _PERCENT.findall(text.translate(FA_DIGITS)):
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        if not any(abs(value - a) <= 0.05 for a in allowed):
+            out.append(value)
+    return out
+
+
+# Marketplaces a Persian car listing might name. Used to catch a model that
+# attributes an offer to a source this spec has no listing from — the sentence
+# reads perfectly and the attribution is fiction.
+KNOWN_MARKETPLACES = (
+    "دیوار", "باما", "همراه\u200cمکانیک", "همراه مکانیک", "خودرو۴۵", "خودرو ۴۵",
+    "ایران\u200cجیب", "ایران جیب", "شیپور", "اتومارکت", "بازار خودرو",
+    "خودروبانک", "ماشین\u200cبازار", "کارنامه", "هملو",
+)
+
+
+def bad_sources(text: str, facts: dict) -> list[str]:
+    """Marketplaces named in the text that have no offer in this spec."""
+    present = {str(o.get("source_fa") or "") for o in facts.get("offers", [])}
+    # Fold the ZWNJ so «همراه‌مکانیک» and «همراه مکانیک» compare equal.
+    flat = {p.replace("\u200c", " ") for p in present if p}
+    haystack = text.replace("\u200c", " ")
+    hits: list[str] = []
+    for name in KNOWN_MARKETPLACES:
+        plain = name.replace("\u200c", " ")
+        if plain in flat:
+            continue
+        # Bounded, and not immediately followed by a digit or a percent sign.
+        # «خودرو» means "car", so «این خودرو ۴۵٪ زیر میانه» contains the literal
+        # marketplace name «خودرو ۴۵» by accident — a real rejection with an
+        # invented reason, which is worse than no reason.
+        pattern = (rf"(?<![{_PERSIAN_LETTER}a-zA-Z]){re.escape(plain)}"
+                   rf"(?![{_PERSIAN_LETTER}a-zA-Z0-9\u06F0-\u06F9]|\s*[٪%])")
+        if re.search(pattern, haystack):
+            hits.append(plain)
+    return sorted(set(hits))
+
+
 def supported_numbers(facts: dict) -> set[int]:
     """Numbers the model is allowed to say, plus the forms it may say them in.
 
@@ -132,12 +214,10 @@ def supported_numbers(facts: dict) -> set[int]:
                 if x is not None and y is not None:
                     add(abs(int(x) - int(y)))
 
-    if facts.get("km_bucket") is not None:
-        b = facts["km_bucket"]
-        add(b * 25)
-        add((b + 1) * 25)
-        add(b * 25_000)
-        add((b + 1) * 25_000)
+    # km_bucket is deliberately absent. It is a display band, not a fact about
+    # any offer: including it let the guard accept «۲۵٬۰۰۰ کیلومتر» on a car
+    # whose real readings were 12,000 and 30,000. Every genuine mileage is
+    # already in the set from offer.mileage_km.
     return allowed
 
 
@@ -157,6 +237,14 @@ FORBIDDEN_TOPICS: dict[str, tuple[str, ...]] = {
     "seller": ("فروشنده معتبر", "نمایشگاه معتبر", "شخصی است", "قابل اعتماد"),
     "financing": ("اقساط", "لیزینگ", "وام", "چک"),
     "negotiation": ("قابل مذاکره", "تخفیف می‌دهد"),
+    # The system prompt forbids «رنگ» explicitly and the guard did not enforce
+    # it, so «این خودرو بدون رنگ و بدون تصادف است» passed clean.
+    "paint": ("بدون رنگ", "رنگ‌شدگی", "دور رنگ", "تمام رنگ", "بدون تصادف", "تصادفی"),
+    "options": ("فول آپشن", "آپشن کامل", "فول"),
+    "paperwork": ("تعویض پلاک", "سند آزاد", "مدارک کامل"),
+    # A superlative is a claim about every listing in the market, and the input
+    # only ever describes one spec.
+    "superlative": ("بهترین قیمت بازار", "کم‌کارکردترین", "بی‌نظیرترین", "تمیزترین"),
 }
 
 
@@ -174,10 +262,21 @@ def forbidden_claims(text: str, facts: dict) -> list[str]:
     hits: list[str] = []
     for topic, phrases in FORBIDDEN_TOPICS.items():
         for phrase in phrases:
-            if phrase in text and phrase not in haystack:
+            if _mentions(text, phrase) and not _mentions(haystack, phrase):
                 hits.append(topic)
                 break
     return hits
+
+
+def _mentions(text: str, phrase: str) -> bool:
+    """Whole-word containment.
+
+    A bare substring test rejected «کوچک» because «چک» (cheque) is inside it,
+    and «وام» inside other words. The phrase must start and end at a
+    non-letter — Persian letters included, which is what \b gets wrong.
+    """
+    pattern = rf"(?<![{_PERSIAN_LETTER}a-zA-Z]){re.escape(phrase)}(?![{_PERSIAN_LETTER}a-zA-Z])"
+    return re.search(pattern, text) is not None
 
 
 @dataclass
@@ -201,17 +300,32 @@ def _supported(value: float, allowed: set[float]) -> bool:
 def check(text: str, facts: dict) -> tuple[bool, list[float], list[str]]:
     """Verify the explanation against its input.
 
-    Two independent checks, because the model fails in two different ways:
-    numbers it invented, and subjects it invented. Either one alone lets real
-    fabrications through.
+    Four independent checks, because the model invents in four different ways
+    and any one of them alone lets real fabrications through:
+
+      numbers      — a price or mileage that was never given
+      percentages  — a position against the median that no offer supports
+      topics       — a subject the input never mentioned
+      sources      — an offer attributed to a marketplace with no listing here
+
+    Percentages need their own pass because they are small: the numeric check
+    ignores anything under IGNORE_BELOW to avoid flagging «۳ منبع», which meant
+    the product's headline claim went unchecked entirely.
     """
     allowed = supported_numbers(facts)
     bad_numbers = [
         n for n in numbers_in(text)
         if n >= IGNORE_BELOW and not _supported(n, allowed)
     ]
+    bad_pcts = bad_percentages(text, facts)
     bad_topics = forbidden_claims(text, facts)
-    return (not bad_numbers and not bad_topics), sorted(bad_numbers), bad_topics
+    bad_src = bad_sources(text, facts)
+
+    ok = not (bad_numbers or bad_pcts or bad_topics or bad_src)
+    # Percentages surface in the numeric list so callers and the UI keep one
+    # "numbers the model made up" channel; sources join the topic channel for
+    # the same reason.
+    return ok, sorted(set(bad_numbers) | set(bad_pcts)), bad_topics + [f"source:{s}" for s in bad_src]
 
 
 # A mileage gap smaller than this is noise between two used cars, not a reason

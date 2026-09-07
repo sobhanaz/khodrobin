@@ -28,10 +28,79 @@ FACTS = {
 
 
 def test_an_explanation_using_only_given_numbers_passes():
+    # This assertion used to be vacuous. IGNORE_BELOW=100 filtered «۲۱٪» out
+    # before the allow-set was consulted, so the test proved only that the guard
+    # ignored the product's headline claim. The companion test below is the one
+    # that gives it meaning.
     text = ("این پژو ۲۰۷ در همراه‌مکانیک با ۱٬۶۶۰٬۰۰۰٬۰۰۰ تومان، ۲۱٪ زیر میانه‌ی "
             "۲٬۱۱۴٬۰۰۰٬۰۰۰ تومانی است. در عوض ۱۲۰۰۰ کیلومتر کار کرده است.")
+    ok, bad, topics = explain.check(text, FACTS)
+    assert ok, (bad, topics)
+
+
+def test_a_fabricated_percentage_is_caught():
+    # The true position is -21.5%. Claiming 45% is the single most damaging
+    # thing this product could say, and it went completely unchecked.
+    text = "این پژو ۲۰۷ ۴۵٪ زیر میانه‌ی بازار است."
     ok, bad, _ = explain.check(text, FACTS)
-    assert ok, bad
+    assert not ok
+    assert 45.0 in bad
+
+
+def test_both_neighbours_of_a_decimal_percentage_are_accepted():
+    # A person writing about 21.5٪ says «۲۱٪» or «۲۲٪»; rejecting either would
+    # fail correct Persian.
+    for pct in ("۲۱", "۲۲", "۲۱.۵"):
+        ok, bad, _ = explain.check(f"این خودرو {pct}٪ زیر میانه است.", FACTS)
+        assert ok, (pct, bad)
+
+
+def test_an_offer_attributed_to_an_absent_marketplace_is_caught():
+    # The sentence reads perfectly; the attribution is fiction.
+    ok, _, topics = explain.check("این خودرو در «ایران‌جیب» ارزان‌ترین است.", FACTS)
+    assert not ok
+    assert any(t.startswith("source:") for t in topics)
+    ok, _, _ = explain.check("این خودرو در «دیوار» ارزان‌تر است.", FACTS)
+    assert ok
+
+
+def test_the_word_for_car_is_not_mistaken_for_a_marketplace():
+    # «خودرو» means "car", so «این خودرو ۴۵٪...» contains the literal
+    # marketplace name «خودرو ۴۵» by accident.
+    _, _, topics = explain.check("این خودرو ۲۱٪ زیر میانه است.", FACTS)
+    assert not any(t.startswith("source:") for t in topics), topics
+
+
+def test_paint_and_condition_claims_are_caught():
+    # The system prompt forbids «رنگ» explicitly and the guard did not enforce it.
+    for text in ("این خودرو بدون رنگ است.", "این خودرو تصادفی نیست.",
+                 "این خودرو فول آپشن است."):
+        ok, _, topics = explain.check(text, FACTS)
+        assert not ok, text
+        assert topics, text
+
+
+def test_a_superlative_about_the_whole_market_is_caught():
+    # The input describes one spec; it cannot support a claim about every car.
+    ok, _, topics = explain.check("این کم‌کارکردترین خودروی بازار است.", FACTS)
+    assert not ok
+    assert "superlative" in topics
+
+
+def test_common_words_containing_a_forbidden_substring_are_not_rejected():
+    # «چک» (cheque) sits inside «کوچک» (small), and a bare substring test
+    # rejected the ordinary word for "smaller".
+    for text in ("در عوض صندوق عقب کوچک‌تری دارد.", "این خودرو کوچک و کم‌مصرف است."):
+        ok, nums, topics = explain.check(text, FACTS)
+        assert ok, (text, nums, topics)
+
+
+def test_the_mileage_band_is_not_a_fact_about_any_offer():
+    # km_bucket is a display band. Including it let the guard accept
+    # «۲۵٬۰۰۰ کیلومتر» on a car whose real readings were 12,000 and 30,000.
+    ok, bad, _ = explain.check("در عوض ۲۵٬۰۰۰ کیلومتر کار کرده است.", FACTS)
+    assert not ok
+    assert 25000.0 in bad
 
 
 def test_an_invented_price_is_caught():
