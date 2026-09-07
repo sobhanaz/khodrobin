@@ -17,6 +17,12 @@
 	# The Go service owns the data surface and the probes; Nuxt owns everything
 	# a person sees. Same origin, so the browser makes no cross-origin request
 	# and there is no CORS surface at all.
+	# The auth service owns its own prefix. Split at the edge rather than
+	# proxying through the search API: an outage in one must not take the other
+	# down, and search stays anonymous.
+	handle /api/auth/* {
+		reverse_proxy auth:8081
+	}
 	handle /api/* {
 		reverse_proxy api:8080
 	}

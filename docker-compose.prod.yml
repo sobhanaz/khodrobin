@@ -95,6 +95,27 @@ services:
     # only. An open Ollama port is an open compute endpoint.
     restart: unless-stopped
 
+  auth:
+    image: ghcr.io/${GHCR_OWNER}/khodrobin-auth:${TAG:-latest}
+    environment:
+      AUTH_ADDR: ":8081"
+      DATABASE_URL: postgres://khodrobin:${POSTGRES_PASSWORD}@postgres:5432/khodrobin?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://khodrobin.noxioai.com}
+      # Mail is optional at boot on purpose: without it the service still starts
+      # and serves, and registration reports that the link could not be sent.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-خودروبین}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    expose:
+      - "8081"
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+
   crawler:
     image: ghcr.io/${GHCR_OWNER}/khodrobin-crawler:${TAG:-latest}
     environment:

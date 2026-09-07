@@ -20,6 +20,7 @@ env:
   CRAWLER_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-crawler
   WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-web
   AI_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-ai
+  AUTH_IMAGE: ghcr.io/${{ github.repository_owner }}/khodrobin-auth
 
 jobs:
   build:
@@ -67,6 +68,17 @@ jobs:
             ${{ env.WEB_IMAGE }}:latest
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      - name: auth image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/auth
+          push: true
+          tags: |
+            ${{ env.AUTH_IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.AUTH_IMAGE }}:latest
+          cache-from: type=gha,scope=auth
+          cache-to: type=gha,mode=max,scope=auth
 
       - name: ai image
         uses: docker/build-push-action@v6
@@ -124,6 +136,14 @@ jobs:
           TAG=${TAG}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           SELLER_HASH_SALT=${{ secrets.SELLER_HASH_SALT }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          PUBLIC_BASE_URL=https://${{ vars.PUBLIC_HOST || 'khodrobin.noxioai.com' }}
+          SMTP_HOST=${{ vars.SMTP_HOST }}
+          SMTP_PORT=${{ vars.SMTP_PORT }}
+          SMTP_USER=${{ vars.SMTP_USER }}
+          SMTP_FROM=${{ vars.SMTP_FROM }}
+          SMTP_FROM_NAME=خودروبین
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
           ENVFILE
           chmod 600 .env
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
