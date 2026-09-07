@@ -68,12 +68,6 @@ await useAsyncData('initial', () => run())
       </div>
     </section>
 
-    <footer class="mb-10 mt-14 flex flex-wrap justify-between gap-3 border-t border-white/[.07] pt-5 text-[.78rem] text-ink-3">
-      <span>خودروبین — ساخته‌شده برای چالش AI Product Engineer ترب</span>
-      <a href="https://github.com/sobhanaz/khodrobin" target="_blank" rel="noopener noreferrer" class="font-mono hover:text-ink-2">
-        github.com/sobhanaz/khodrobin
-      </a>
-    </footer>
   </main>
 </template>
 
