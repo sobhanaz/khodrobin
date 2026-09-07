@@ -53,3 +53,25 @@ def test_an_ordinary_listing_is_not_flagged_as_an_allocation():
     car = {"title": "دنا پلاس ۶ دنده مدل ۱۴۰۵ تحویل فوری", "mileage_km": 1_200,
            "year_jalali": 1405, "body_status": "بدون رنگ", "price_toman": 2_440_000_000}
     assert pl.flags(car) == []
+
+
+def test_divar_instalment_listing_is_flagged():
+    """The asymmetry that let a fake bargain lead a live card.
+
+    Bama declares instalment sales in a field and normalize.py has dropped them
+    from the start. Divar declares them only in the title, so nothing caught
+    them, and «فروش اقساطی سمند سورن» led a card at 55.8% below the median.
+    """
+    codes = [f["code"] for f in pl.flags({
+        "title": "فروش اقساطی سمند سورن موتور پارس، مدل ۱۴۰۳",
+        "price_toman": 828_000_000, "year": 1403, "mileage_km": 0,
+    })]
+    assert "instalment_price" in codes
+
+
+def test_an_ordinary_listing_is_not_flagged_as_instalment():
+    codes = [f["code"] for f in pl.flags({
+        "title": "سمند سورن پلاس، مدل ۱۴۰۳", "price_toman": 1_800_000_000,
+        "year": 1403, "mileage_km": 12_000,
+    })]
+    assert "instalment_price" not in codes

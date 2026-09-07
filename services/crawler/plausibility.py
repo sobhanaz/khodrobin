@@ -35,6 +35,19 @@ WORKED_ON = {"رنگ‌شدگی", "تمام‌رنگ", "تعویض"}
 NOT_A_CAR_YET = ("حواله", "پیش فروش", "پیش‌فروش", "پیش خرید", "پیش‌خرید",
                  "مشارکت در تولید", "قرعه کشی", "قرعه‌کشی", "ثبت نام", "ثبت‌نام")
 
+# An instalment listing quotes a down payment, not the price of the car.
+#
+# Bama says so in a field, and normalize.py has dropped those since the start.
+# Divar says so only in the title, so nothing caught them: a «فروش اقساطی سمند
+# سورن» sat at the top of a live card at 828,000,000 and «۵۵.۸٪ زیر میانه»,
+# which is the same fake bargain the حواله listing was, arriving through the
+# one door that was never checked.
+#
+# The lesson is the asymmetry rather than the phrase. A rule enforced on the
+# source that reports cleanly, and skipped on the source that does not, is a
+# rule that only ever runs where it was not needed.
+INSTALMENT = ("اقساط", "قسطی", "پیش پرداخت", "پیش‌پرداخت", "چک و سند")
+
 
 def flags(car: dict) -> list[dict[str, str]]:
     """Return zero or more {code, message} findings for one canonical car."""
@@ -75,6 +88,15 @@ def flags(car: dict) -> list[dict[str, str]]:
                 "code": "not_a_car_yet",
                 "message": ("این آگهی حواله یا پیش‌فروش است، نه خودروی آماده‌ی تحویل؛ "
                             "قیمتش با آگهی‌های دیگر قابل مقایسه نیست."),
+            })
+            break
+
+    for phrase in INSTALMENT:
+        if phrase.replace("\u200c", " ") in title:
+            found.append({
+                "code": "instalment_price",
+                "message": ("این آگهی اقساطی است؛ عدد اعلام‌شده معمولاً پیش‌پرداخت است، "
+                            "نه قیمت کامل خودرو، و با بقیه قابل مقایسه نیست."),
             })
             break
 
