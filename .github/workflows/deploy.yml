@@ -139,16 +139,28 @@ jobs:
           docker image prune -f
           SCRIPT
 
+      # Probe what a visitor actually opens, not a constant.
+      #
+      # This used to curl /healthz alone, which returned a hardcoded 200 and so
+      # asserted that the process was running — not that it could answer. A
+      # broken front end, an empty index or a stale one all passed.
       - name: Smoke test
         run: |
+          HOST=$(echo '${{ secrets.DEPLOY_DOMAIN }}' | awk '{print $1}')
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-              "https://$(echo '${{ secrets.DEPLOY_DOMAIN }}' | awk '{print $1}')/healthz" || true)
-            if [ "$code" = "200" ]; then
-              echo "live: https://$(echo '${{ secrets.DEPLOY_DOMAIN }}' | awk '{print $1}')/healthz"
+            ready=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$HOST/readyz" || true)
+            home=$(curl -s --max-time 15 "https://$HOST/" || true)
+            search=$(curl -s --max-time 15 "https://$HOST/api/v1/search?q=%D9%BE%DA%98%D9%88&limit=1" || true)
+
+            home_ok=$(printf '%s' "$home" | grep -c 'خودروبین' || true)
+            hits=$(printf '%s' "$search" | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"]["total"])' 2>/dev/null || echo 0)
+
+            if [ "$ready" = "200" ] && [ "$home_ok" -ge 1 ] && [ "$hits" -gt 0 ]; then
+              echo "live: https://$HOST — readyz 200, homepage rendered, search returned $hits specs"
               exit 0
             fi
-            echo "attempt $i: http=$code"; sleep 6
+            echo "attempt $i: readyz=$ready homepage_match=$home_ok search_hits=$hits"
+            sleep 6
           done
           echo "::error::deployment did not become healthy"
           ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \

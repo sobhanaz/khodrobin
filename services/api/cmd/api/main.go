@@ -64,7 +64,6 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health.Live)
-	mux.HandleFunc("GET /readyz", health.Ready)
 	// The crawler republishes the index on a schedule into a shared volume;
 	// the API picks it up without a restart.
 	store := index.NewStore(indexPath, idx, log)
@@ -79,6 +78,8 @@ func main() {
 	go explains.Watch(30*time.Second, stopWatch)
 	log.Info("explanations loaded", "path", explanationsPath, "count", explains.Count())
 
+	// Readiness needs the store, so it is registered after the store exists.
+	mux.HandleFunc("GET /readyz", health.Ready(store))
 	mux.Handle("/", server.New(store, explains, log))
 
 	srv := &http.Server{

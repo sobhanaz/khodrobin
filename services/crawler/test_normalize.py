@@ -109,3 +109,21 @@ def test_bama_installment_totals_are_not_cash_prices():
     assert n.from_bama(ad)["price_toman"] is None
     ad["price"]["type"] = "lumpsum"
     assert n.from_bama(ad)["price_toman"] == 3_000_000_000
+
+
+def test_unused_identifiers_never_reach_storage():
+    # The seed snapshot is committed to a public repo. Neither field is secret,
+    # but storing per-listing identifiers and neighbourhood locations the
+    # product does not use is what decision ۷ says this project does not do.
+    import run
+    cleaned = run.scrub({
+        "name": "پژو ۲۰۶",
+        "vehicleIdentificationNumber": "P5V744CA4XS4L8MHV",
+        "web_info": {"city_persian": "تهران", "district_persian": "افسریه شمالی"},
+        "offers": {"price": "3100000000"},
+    })
+    assert "vehicleIdentificationNumber" not in cleaned
+    assert "district_persian" not in cleaned["web_info"]
+    # City stays: it is shown to the user and is what "where is this car" means.
+    assert cleaned["web_info"]["city_persian"] == "تهران"
+    assert cleaned["offers"]["price"] == "3100000000"

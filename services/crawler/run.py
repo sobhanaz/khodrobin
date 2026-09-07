@@ -21,7 +21,31 @@ from politeness import HostLimiter  # noqa: E402
 DEFAULT_CITIES = ["tehran", "mashhad", "isfahan", "shiraz", "tabriz"]
 
 
+# Fields we never use and should therefore never store.
+#
+# Neither is secret — a marketplace shows both on the public ad — but the seed
+# snapshot is committed to a public repo, and storing per-listing identifiers
+# and neighbourhood-level locations we have no use for is exactly what decision
+# ۷ says this project does not do. Collect what the product needs; drop the rest
+# at the door rather than carrying it forever.
+DROP_FIELDS = ("vehicleIdentificationNumber",)
+DROP_NESTED = {"web_info": ("district_persian",)}
+
+
+def scrub(payload: dict) -> dict:
+    """Remove data the product does not use before it is ever written."""
+    if not isinstance(payload, dict):
+        return payload
+    cleaned = {k: v for k, v in payload.items() if k not in DROP_FIELDS}
+    for parent, fields in DROP_NESTED.items():
+        child = cleaned.get(parent)
+        if isinstance(child, dict):
+            cleaned[parent] = {k: v for k, v in child.items() if k not in fields}
+    return cleaned
+
+
 def envelope(raw: dict, mod) -> dict:
+    raw = {**raw, "payload": scrub(raw["payload"])}
     payload = json.dumps(raw["payload"], ensure_ascii=False, sort_keys=True)
     return {
         "source": raw["source"],

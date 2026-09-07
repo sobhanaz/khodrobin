@@ -34,6 +34,21 @@ func NewStore(path string, idx *Index, log *slog.Logger) *Store {
 // Get returns the index currently being served.
 func (s *Store) Get() *Index { return s.cur.Load() }
 
+// Specs reports how many specs are being served. Part of the readiness probe's
+// view of the store.
+func (s *Store) Specs() int { return len(s.cur.Load().Specs) }
+
+// BuiltAt is when the crawler produced the served index — not when this process
+// read it. Readiness cares about data age, and a restart does not make old data
+// fresh.
+func (s *Store) BuiltAt() time.Time {
+	t, err := time.Parse(time.RFC3339, s.cur.Load().BuiltAt)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
 // Watch polls the index file and reloads it when its modification time moves.
 //
 // Polling rather than inotify: the file arrives via a Docker volume shared with
