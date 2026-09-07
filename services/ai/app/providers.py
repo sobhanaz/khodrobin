@@ -82,6 +82,22 @@ class Ollama(Provider):
         super().__init__(model, timeout)
         self.host = host or os.getenv("OLLAMA_HOST", "http://ollama:11434")
 
+    def warm(self) -> None:
+        """Load the weights before a user asks.
+
+        Without this the first visitor after a deploy waits for the model to be
+        read off disk. Failure is ignored: warming is an optimisation, and the
+        service must start whether or not the model is ready.
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as c:
+                c.post(f"{self.host}/api/generate",
+                       json={"model": self.model, "prompt": "سلام", "stream": False,
+                             "options": {"num_predict": 1},
+                             "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "24h")})
+        except httpx.HTTPError:
+            pass
+
     def complete(self, system: str, user: str, *, json_mode: bool = True) -> Completion:
         payload = {
             "model": self.model,
@@ -91,6 +107,10 @@ class Ollama(Provider):
             # Deterministic: an intent parser that answers differently on
             # identical input cannot be evaluated.
             "options": {"temperature": 0, "num_predict": 512},
+            # Keep the weights resident. Ollama unloads after five minutes idle
+            # by default, so on a low-traffic site almost every request would
+            # pay a ~35s reload — measured: 59s cold against 10s warm.
+            "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "24h"),
         }
         if json_mode:
             payload["format"] = "json"

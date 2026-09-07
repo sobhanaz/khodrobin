@@ -29,6 +29,20 @@ log = logging.getLogger("khodrobin.ai")
 
 app = FastAPI(title="KhodroBin AI", version="0.1.0")
 
+
+@app.on_event("startup")
+def warm_the_model() -> None:
+    """Pay the weight-load cost at boot rather than making the first visitor wait."""
+    try:
+        p = providers.from_env()
+    except providers.ProviderError as exc:
+        log.warning(json.dumps({"event": "startup.provider_invalid", "err": str(exc)}))
+        return
+    if hasattr(p, "warm"):
+        log.info(json.dumps({"event": "startup.warming", "model": p.model}))
+        p.warm()
+        log.info(json.dumps({"event": "startup.warm", "model": p.model}))
+
 # A bounded in-process cache. Explanations are pure functions of their facts and
 # the prompt version, so an unchanged spec never pays for inference twice.
 # Bounded because an unbounded cache is a memory leak with good intentions.
