@@ -20,7 +20,7 @@ func TestFieldsTheUIDependsOnSurviveTheRoundTrip(t *testing.T) {
 	  "brand":"peugeot","brand_fa":"پژو","model":"207","model_fa":"۲۰۷",
 	  "trim":null,"gearbox":"mt","gearbox_fa":"دنده‌ای","year":1404,"km_bucket":0,
 	  "offer_count":2,"source_count":2,
-	  "median_price":2114000000,"min_price":1660000000,"max_price":2470000000,
+	  "median_price":2114000000,"median_reliable":true,"min_price":1660000000,"max_price":2470000000,
 	  "flag_count":0,
 	  "offers":[{
 	    "source":"divar","source_fa":"دیوار","title":"۲۰۷",
@@ -38,6 +38,9 @@ func TestFieldsTheUIDependsOnSurviveTheRoundTrip(t *testing.T) {
 	}
 	if spec.Image == nil || *spec.Image == "" {
 		t.Error("spec image was dropped")
+	}
+	if !spec.MedianReliable {
+		t.Error("median_reliable was dropped")
 	}
 	if len(spec.Offers) != 1 {
 		t.Fatalf("offers = %d, want 1", len(spec.Offers))
@@ -58,7 +61,7 @@ func TestFieldsTheUIDependsOnSurviveTheRoundTrip(t *testing.T) {
 	for _, field := range []string{
 		"key", "image", "brand_fa", "model_fa", "year", "gearbox_fa",
 		"offer_count", "source_count", "median_price", "min_price", "max_price",
-		"flag_count", "offers",
+		"flag_count", "median_reliable", "offers",
 	} {
 		if _, ok := back[field]; !ok {
 			t.Errorf("field %q missing from the response", field)

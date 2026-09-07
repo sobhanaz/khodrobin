@@ -435,8 +435,14 @@ def build_prompt(facts: dict) -> str:
 
 
 def facts_from_spec(spec: dict) -> dict:
-    """Reduce an index spec to the decision-relevant facts."""
-    offers = spec.get("offers", [])[:3]
+    """Reduce an index spec to the decision-relevant facts.
+
+    Flagged offers are excluded before the top three are taken. An explanation
+    that opens with «۸۲٪ زیر میانه» about a حواله listing is accurate and
+    useless — the guard cannot catch it, because the number is true.
+    """
+    clean = [o for o in spec.get("offers", []) if not o.get("flags")]
+    offers = (clean or spec.get("offers", []))[:3]
     name_parts = [spec.get("brand_fa", ""), spec.get("model_fa", "")]
     return {
         "title": " ".join(p for p in name_parts if p).strip(),

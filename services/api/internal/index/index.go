@@ -54,10 +54,13 @@ type Spec struct {
 	OfferCount  int     `json:"offer_count"`
 	SourceCount int     `json:"source_count"`
 	MedianPrice int64   `json:"median_price"`
-	MinPrice    int64   `json:"min_price"`
-	MaxPrice    int64   `json:"max_price"`
-	FlagCount   int     `json:"flag_count"`
-	Offers      []Offer `json:"offers"`
+	// False when fewer than three offers back the median. With two, it is the
+	// mean of the only two asking prices and no seller is asking it.
+	MedianReliable bool    `json:"median_reliable"`
+	MinPrice       int64   `json:"min_price"`
+	MaxPrice       int64   `json:"max_price"`
+	FlagCount      int     `json:"flag_count"`
+	Offers         []Offer `json:"offers"`
 }
 
 type Stats struct {

@@ -163,7 +163,13 @@ def build(raw_path: pathlib.Path) -> dict:
             "min_price": prices[0],
             "max_price": prices[-1],
             "flag_count": sum(len(o["flags"]) for o in offers),
-            "offers": sorted(offers, key=lambda o: o["price"]),
+            # Cheapest first, but a flagged offer sinks below every clean one.
+            #
+            # A «حواله» listing at 82% under its cohort is the cheapest number
+            # and the worst answer: it is an allocation certificate, not a car.
+            # Detecting it and still showing it first would make the flag
+            # decorative.
+            "offers": sorted(offers, key=lambda o: (bool(o.get("flags")), o["price"])),
         })
 
     # Biggest and most cross-source first: those are the ones worth looking at.
