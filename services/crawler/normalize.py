@@ -27,7 +27,16 @@ JALALI_GREGORIAN_OFFSET = 621
 
 FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
+# Divar's actual knownVehicleDamages vocabulary, taken from live payloads.
+# The original map guessed at these keys and matched almost none of them, so
+# body condition was discarded for 89% of Divar listings — including
+# «accidental», which is the one a buyer most needs to see.
 BODY_STATUS = {
+    "intact": "بدون رنگ",
+    "some-scratches": "بدون رنگ",
+    "paintless-dent-removal": "بدون رنگ",
+    "some-paint": "رنگ‌شدگی",
+    "accidental": "تصادفی",
     "none": "بدون رنگ", "بدون رنگ": "بدون رنگ", "سالم": "بدون رنگ",
     "half-paint": "رنگ‌شدگی", "رنگ‌شدگی": "رنگ‌شدگی", "دوررنگ": "رنگ‌شدگی",
     "full-paint": "تمام‌رنگ", "تمام رنگ": "تمام‌رنگ",
@@ -126,7 +135,13 @@ def from_bama(p: dict) -> dict:
         "year_jalali": jalali,
         "year_gregorian": greg,
         "mileage_km": mileage_km(d.get("mileage")),
-        "price_toman": price_toman((p.get("price") or {}).get("price"), unit="toman"),
+        # Bama quotes three price types. For an instalment listing the `price`
+        # field is the financed total, which is not comparable to a cash asking
+        # price and was dragging cluster medians upward.
+        "price_toman": (
+            None if (p.get("price") or {}).get("type") == "installment"
+            else price_toman((p.get("price") or {}).get("price"), unit="toman")
+        ),
         "colour": d.get("body_color"),
         "body_status": _lookup(BODY_STATUS, d.get("body_status")),
         "transmission": _lookup(TRANSMISSION, d.get("transmission")),

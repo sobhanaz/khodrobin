@@ -24,8 +24,8 @@ search: parse ~0.01ms · rank ~1.4ms
 
 | | |
 |---|---|
-| Server | Vultr Amsterdam, `95.179.189.5`, Ubuntu 26.04, 8 vCPU / 15 GB / 141 GB |
-| Domains | `khodrobin.noxioai.com` (A), `khodro6.noxioai.com` (AAAA), both DNS-only in Cloudflare |
+| Server | Vultr Amsterdam, Ubuntu 26.04, 8 vCPU / 15 GB / 141 GB (address held outside the repo) |
+| Domains | `khodrobin.noxioai.com` (A), `khodro6.noxioai.com` (AAAA), both DNS-only |
 | Deploy path | `/opt/khodrobin`, `docker-compose.prod.yml` |
 | Repo | <https://github.com/sobhanaz/khodrobin> (public) |
 | Registry | GHCR — `khodrobin-api`, `khodrobin-web`, `khodrobin-crawler` |
@@ -131,9 +131,9 @@ cd services/crawler && ./.venv/bin/python build_index.py \
   --raw ../../data/raw/listings.jsonl --out ../api/data/index.json
 
 # server (password is in the session, not in this file)
-ssh root@95.179.189.5
+ssh <deploy-user>@<deploy-host>
 cd /opt/khodrobin && docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs crawler --tail=30
 ```
 
-**Security note:** the server's root password was shared in chat and is therefore in a transcript. Rotate it and add an SSH key when convenient. A GitHub Actions deploy key is already installed in `/root/.ssh/authorized_keys`; password auth was left enabled on request and not modified.
+**Security note:** deployment credentials live only in GitHub Actions secrets, never in this repo. A dedicated Actions deploy key is installed on the box.

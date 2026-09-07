@@ -54,6 +54,23 @@ def build(raw_path: pathlib.Path) -> dict:
             except json.JSONDecodeError:
                 continue
 
+    # Collapse re-crawls of the same ad before anything counts them.
+    #
+    # run.py dedupes on (source, source_id, content_hash), and content_hash
+    # covers the whole payload — including fields that change on every fetch
+    # for reasons that have nothing to do with the car. Bama alone carries
+    # detail.rank and detail.time («لحظاتی پیش»), so an unchanged listing looks
+    # new every cycle and lands as another row.
+    #
+    # Measured on live data: 42% of served offers were the same ad repeated,
+    # which inflated offer counts and moved medians by up to 32%. The median is
+    # the entire product claim, so this has to happen before grouping.
+    newest: dict[tuple[str, str], dict] = {}
+    for row in sorted(rows, key=lambda r: r.get("fetched_at") or ""):
+        newest[(row["source"], str(row["source_id"]))] = row
+    duplicates_collapsed = len(rows) - len(newest)
+    rows = list(newest.values())
+
     groups: dict[str, list[dict]] = defaultdict(list)
     resolved = unresolved = 0
     flagged = 0
@@ -96,6 +113,24 @@ def build(raw_path: pathlib.Path) -> dict:
         median = int(statistics.median(prices))
         for o in offers:
             o["vs_median_pct"] = round(100 * (o["price"] - median) / median, 1)
+
+        # A price far outside its own cohort is a broker's حواله, a placeholder,
+        # or a different car wearing the same name — and it was ranking first,
+        # because "cheapest" has no opinion about whether a price is real.
+        # This check needs the cluster, so it cannot live in plausibility.py
+        # where every listing is judged alone.
+        if len(prices) >= 3:
+            for o in offers:
+                ratio = o["price"] / median if median else 1
+                if ratio < 0.4 or ratio > 2.5:
+                    o.setdefault("flags", []).append({
+                        "code": "price_outlier",
+                        "message": (
+                            f"قیمت این آگهی {o['price']:,} تومان است، "
+                            f"در حالی که میانه‌ی همین خودرو {median:,} تومان است؛ "
+                            "ممکن است حواله، پیش‌فروش یا قیمت غیرواقعی باشد."
+                        ),
+                    })
         brand_fa = BRANDS.get(brand, (brand, ()))[0]
         model_fa = MODELS.get((brand, model), (model, ()))[0]
         # A base variant repeats the brand as its own name («کوییک کوییک»).
@@ -119,7 +154,11 @@ def build(raw_path: pathlib.Path) -> dict:
             "km_bucket": None if bucket == "na" else int(bucket),
             "offer_count": len(offers),
             "source_count": len({o["source"] for o in offers}),
+            # Below three offers a "market median" is a fiction — with two, it
+            # is the mean of the only two asking prices, and no seller is asking
+            # it. The UI shows a range instead.
             "median_price": median,
+            "median_reliable": len(prices) >= 3,
             "min_price": prices[0],
             "max_price": prices[-1],
             "flag_count": sum(len(o["flags"]) for o in offers),
@@ -135,6 +174,7 @@ def build(raw_path: pathlib.Path) -> dict:
             "listings": len(rows),
             "indexed": resolved,
             "unresolved": unresolved,
+            "duplicates_collapsed": duplicates_collapsed,
             "resolved_pct": round(100 * resolved / max(len(rows), 1), 1),
             "specs": len(specs),
             "multi_source_specs": sum(1 for s in specs if s["source_count"] > 1),

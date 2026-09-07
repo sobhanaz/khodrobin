@@ -206,7 +206,7 @@ hamrah-mechanic   = 200
 
 **What survives from ۸ and ۹.** The constraint itself is real and worth stating — a Tehran reviewer must be able to open the link, and model APIs will not answer an Iranian IP. Both are satisfied by putting the box in Amsterdam. And the caution stands: Divar *does* push back on sustained crawling, just not by IP geography — see decision ۱۲.
 
-**Live at** `khodrobin.noxioai.com` (A → 95.179.189.5) and `khodro6.noxioai.com` (AAAA), both unproxied so Caddy can answer the ACME challenge, both on one certificate.
+**Live at** `khodrobin.noxioai.com` (A) and `khodro6.noxioai.com` (AAAA), both unproxied so Caddy can answer the ACME challenge, both on one certificate.
 
 ---
 

@@ -84,3 +84,28 @@ def test_every_source_yields_an_image_url():
                            "city": {"title": "تهران"}, "slug": "S"})
     for car in (divar, bama, hamrah, k45):
         assert car["image"], car
+
+
+def test_divar_real_damage_vocabulary_is_understood():
+    # The original map guessed keys Divar never sends, discarding body condition
+    # for 89% of its listings — «accidental» included.
+    for raw, expected in [
+        ("intact", "بدون رنگ"),
+        ("some-scratches", "بدون رنگ"),
+        ("some-paint", "رنگ‌شدگی"),
+        ("paintless-dent-removal", "بدون رنگ"),
+        ("accidental", "تصادفی"),
+    ]:
+        car = n.from_divar({"name": "x", "knownVehicleDamages": raw,
+                            "offers": {"price": "3100000000"}, "productionDate": "1396"})
+        assert car["body_status"] == expected, (raw, car["body_status"])
+
+
+def test_bama_installment_totals_are_not_cash_prices():
+    # The financed total is not comparable to an asking price and was pulling
+    # cluster medians upward.
+    ad = {"detail": {"title": "x", "year": "1400"},
+          "price": {"type": "installment", "price": "3,000,000,000"}}
+    assert n.from_bama(ad)["price_toman"] is None
+    ad["price"]["type"] = "lumpsum"
+    assert n.from_bama(ad)["price_toman"] == 3_000_000_000
