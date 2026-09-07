@@ -71,8 +71,13 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/auth/searches/{id}", a.authed(a.deleteSearch))
 	mux.HandleFunc("POST /api/auth/contact", a.rateLimited(3, a.contact))
 	mux.HandleFunc("GET /api/auth/admin/summary", a.adminOnly(a.adminSummary))
+	// Registered twice on purpose. Compose reaches this service directly at
+	// /healthz, while Caddy forwards the whole /api/auth/* path unchanged, so an
+	// external monitor needs the prefixed form.
 	mux.HandleFunc("GET /healthz", a.healthz)
 	mux.HandleFunc("GET /readyz", a.readyz)
+	mux.HandleFunc("GET /api/auth/healthz", a.healthz)
+	mux.HandleFunc("GET /api/auth/readyz", a.readyz)
 }
 
 // --- plumbing --------------------------------------------------------------
