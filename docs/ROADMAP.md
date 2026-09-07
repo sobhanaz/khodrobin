@@ -1,8 +1,34 @@
-# خودروبین — Build Roadmap for the Torob AI Product Engineer Challenge
+# خودروبین — Build Roadmap
 
-*Sobhan Azimzadeh · 6 Sep 2026 · target submission: 20 Sep 2026 (14 days)*
-
-Companion to [`torob_challenge_page_full_report.md`](./torob_challenge_page_full_report.md). That doc is *what they ask for*. This doc is *what you build and how you ship it*.
+> ### ⚠️ Status, 7 Sep 2026 — read this before the plan below
+>
+> **Most of this roadmap is now built and deployed.** It is kept because the
+> reasoning behind each section is still the reasoning in the code, and because
+> several of its predictions turned out wrong in instructive ways. Where the
+> document and the repository disagree, the repository is right.
+>
+> **Shipped:** four sources (the plan said three), normalization with
+> contradiction and outlier flags, spec clustering, deterministic ranking,
+> explanations with a four-axis hallucination guard, an eval harness gating CI,
+> an accounts service, per-car SSR pages with structured data, an admin
+> dashboard, and CI/CD from GitHub to one VPS.
+>
+> **Not built:** the demo video — the one remaining rubric line. Monitoring and
+> Elasticsearch are also still open, and were always "if time allows".
+>
+> **Where the plan was wrong, and it matters:**
+> - It assumed the crawler would need Playwright. All four sources publish
+>   structured data over plain HTTP; `httpx` was enough.
+> - It assumed the same physical car could be matched across marketplaces. It
+>   cannot, at any volume reachable honestly — see `DECISIONS.md` ۱۳. The unit is
+>   the spec, which is also what Torob's own card is.
+> - It assumed split infrastructure was needed to reach both Iranian sources and
+>   the model APIs. One Amsterdam box reaches both — measured, `DECISIONS.md` ۱۰.
+> - It planned an all-Go crawler. It is Python, which is the better fit and also
+>   the language the job description asks for.
+>
+> Current numbers live at `/api/v1/stats`. The day-by-day plan below is kept as a
+> record of sequencing, not as a to-do list.
 
 ---
 
@@ -739,7 +765,7 @@ Persian primary with an English summary at the top of each file. You are bilingu
 
 ---
 
-## 18. The 14-day plan
+## 18. The 14-day plan *(historical — see the status block above)*
 
 | Day | Deliverable | Done when |
 |---|---|---|
@@ -790,7 +816,7 @@ Upload to **Aparat** (Iran-reachable, no login) as primary, with an unlisted You
 
 ---
 
-## 21. Scoring self-check before you submit
+## 21. Scoring self-check before you submit *(current checklist — the video is the open item)*
 
 - [ ] Real data, 3 sources, refreshed on a schedule, raw rows retained
 - [ ] One physical car → one row → three seller prices, visible on the landing result
