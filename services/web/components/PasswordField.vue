@@ -27,14 +27,19 @@ const revealed = ref(false)
     required
     dir="ltr"
   >
-    <template #adornment>
+    <template #adornment="{ focus }">
+      <!-- Toggling puts focus on the button, which drops the caret out of the
+           field someone is mid-way through typing into. Handing it straight
+           back means reading what you typed costs nothing. -->
       <button
         type="button"
-        class="absolute inset-y-0 left-0 flex items-center px-3.5 text-ink-3 transition hover:text-ink-2
-               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        tabindex="-1"
+        class="absolute inset-y-0 left-0 flex w-12 items-center justify-center rounded-r-xl text-ink-3
+               transition hover:text-ink-2
+               focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
         :aria-label="revealed ? 'پنهان کردن رمز' : 'نمایش رمز'"
         :aria-pressed="revealed"
-        @click="revealed = !revealed"
+        @click="revealed = !revealed; focus()"
       >
         <svg v-if="!revealed" viewBox="0 0 24 24" class="size-[18px]" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke-linecap="round" stroke-linejoin="round" />

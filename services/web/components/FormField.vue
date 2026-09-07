@@ -14,6 +14,13 @@ const props = withDefaults(defineProps<{
 
 const model = defineModel<string>({ required: true })
 const input = ref<HTMLInputElement | null>(null)
+const slots = useSlots()
+
+// An adornment is absolutely positioned over the field, so the field has to
+// give up the space or the text runs underneath it. The password toggle sat on
+// top of the first characters of every password typed into it, because the
+// input's padding was a fixed px-4 that knew nothing about the button.
+const adorned = computed(() => Boolean(slots.adornment))
 
 // Autofocus the first field so a returning user can start typing immediately,
 // but never on touch: focusing there opens the keyboard over the page and hides
@@ -55,11 +62,18 @@ const describedBy = computed(() => {
         class="w-full rounded-xl border bg-surface px-4 py-3 text-ink outline-none transition
                placeholder:text-ink-3
                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-        :class="error
-          ? 'border-accent/60 focus-visible:outline-accent'
-          : 'border-white/[.12] focus:border-accent/55 focus:shadow-[0_0_0_4px_rgba(255,46,77,.12)] focus-visible:outline-accent'"
+        :class="[
+          error
+            ? 'border-accent/60 focus-visible:outline-accent'
+            : 'border-white/[.12] focus:border-accent/55 focus:shadow-[0_0_0_4px_rgba(255,46,77,.12)] focus-visible:outline-accent',
+          // Physical, not logical: the adornment is pinned to the physical left
+          // edge, and this field renders LTR content inside an RTL page — a
+          // logical ps-* would follow the text direction and reserve the gap on
+          // the wrong side.
+          adorned && 'pl-12',
+        ]"
       >
-      <slot name="adornment" />
+      <slot name="adornment" :focus="() => input?.focus()" />
     </div>
 
     <p v-if="hint && !error" :id="`${id}-hint`" class="mt-1.5 text-[.76rem] leading-6 text-ink-3">
