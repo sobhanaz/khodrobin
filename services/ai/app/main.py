@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import pathlib
 import time
 from collections import OrderedDict
 from typing import Any
@@ -49,9 +50,14 @@ def warm_the_model() -> None:
 CACHE_MAX = int(os.getenv("AI_CACHE_MAX", "2000"))
 _cache: OrderedDict[str, dict] = OrderedDict()
 
-# Bump when a prompt changes: the cache key includes it, so old entries expire
-# by construction instead of by hand.
-PROMPT_VERSION = "1"
+# Derived from the source of the prompt-and-guard module, not typed by hand.
+#
+# This was `= "1"` while the prompt and the guard changed a dozen times, because
+# a constant somebody has to remember to bump is not a mechanism — it is a hope.
+# Hashing the module means editing the guard invalidates every explanation the
+# old guard approved, automatically, in this cache and in the warm file.
+PROMPT_VERSION = hashlib.sha256(
+    pathlib.Path(explain_mod.__file__).read_bytes()).hexdigest()[:12]
 
 # A hard daily ceiling. Past it the service serves cache and fallbacks rather
 # than spending. Torob publishes their own $/day; running without a limit is not
@@ -109,7 +115,10 @@ class ExplainRequest(BaseModel):
 def health() -> dict:
     p = providers.from_env()
     return {"status": "ok", "provider": p.name, "model": p.model,
-            "cache": len(_cache), "spend": _spend}
+            "cache": len(_cache), "spend": _spend,
+            # The warmer reads this to decide whether its cached explanations
+            # were written under the guard that is running now.
+            "guard_version": PROMPT_VERSION}
 
 
 @app.post("/intent")

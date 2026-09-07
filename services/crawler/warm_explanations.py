@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import sys
 import time
 from datetime import datetime, timezone
 
@@ -55,14 +54,36 @@ def load_existing(path: pathlib.Path) -> dict:
         return {}
 
 
-def spec_fingerprint(spec: dict) -> str:
+def spec_fingerprint(spec: dict, guard_version: str = "") -> str:
     """What makes an explanation stale.
 
-    Prices move between crawls. An explanation that says a car is 21% below
-    market is wrong the moment the median shifts, so it is regenerated when any
-    number it could have cited changes.
+    Two different things can do it, and the first version of this only modelled
+    one of them.
+
+    The data: prices move between crawls, and an explanation that says a car is
+    21% below market is wrong the moment the median shifts.
+
+    The rules: when the guard gained a coherence axis it would have refused 10
+    of the 93 explanations already sitting in this file — and every one kept
+    being served, because their prices had not moved. `guard_version` is a hash
+    of the guard's own source, read from the AI service, so editing the guard
+    expires everything the old guard approved without anyone remembering to.
     """
-    return f"{spec.get('median_price')}:{spec.get('offer_count')}:{spec.get('min_price')}:{spec.get('max_price')}"
+    return (f"{spec.get('median_price')}:{spec.get('offer_count')}"
+            f":{spec.get('min_price')}:{spec.get('max_price')}:{guard_version}")
+
+
+def guard_version(client: httpx.Client) -> str:
+    """The running guard's identity, or empty if it will not say.
+
+    Empty degrades to the old data-only behaviour rather than discarding the
+    whole cache: a health check that fails is a reason to reuse warm answers,
+    not to spend the budget regenerating them against a service that is down.
+    """
+    try:
+        return str(client.get("/health", timeout=10).json().get("guard_version", ""))
+    except (httpx.HTTPError, ValueError):
+        return ""
 
 
 def warm(index_path: pathlib.Path, out_path: pathlib.Path, ai_url: str,
@@ -76,9 +97,11 @@ def warm(index_path: pathlib.Path, out_path: pathlib.Path, ai_url: str,
     started = time.monotonic()
 
     with httpx.Client(timeout=180, base_url=ai_url.rstrip("/")) as client:
+        guard = guard_version(client)
+
         for spec in specs:
             key = spec["key"]
-            fingerprint = spec_fingerprint(spec)
+            fingerprint = spec_fingerprint(spec, guard)
 
             prior = existing.get(key)
             if prior and prior.get("fingerprint") == fingerprint:
