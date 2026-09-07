@@ -24,10 +24,10 @@ Built for Torob's **AI Product Engineer** challenge. The five stages of their br
 
 | Challenge line | Module | Status |
 |---|---|---|
-| `crawl offers` | [`crawler/sources/`](./crawler/sources) | ✅ 1,875 listings from 3 sources |
-| `normalize messy data` | [`crawler/normalize.py`](./crawler/normalize.py) · [`plausibility.py`](./crawler/plausibility.py) | ✅ units, year systems, contradiction flags |
-| `rank by user intent` | [`crawler/extract.py`](./crawler/extract.py) · `api/internal/rank` | 🚧 clustering done, ranking next |
-| `explain the best choice` | `ai/` | 🚧 |
+| `crawl offers` | [`services/crawler/sources/`](./services/crawler/sources) | ✅ 7,600+ listings from 4 sources, every 3h |
+| `normalize messy data` | [`services/crawler/normalize.py`](./services/crawler/normalize.py) · [`plausibility.py`](./services/crawler/plausibility.py) | ✅ units, year systems, contradiction flags |
+| `rank by user intent` | [`services/api/internal/search`](./services/api/internal/search) | ✅ 4 modes, transparent score breakdown |
+| `explain the best choice` | `services/ai/` | 🚧 next |
 | `ship demo.mp4` | the video link above | 🚧 |
 
 ---
@@ -47,6 +47,40 @@ From 1,875 listings: **765 spec clusters, 69 of them spanning more than one sour
 **It tells you when a listing contradicts itself.** Bama lists a 1385 Pride as «صفر کیلومتر» while also recording «گلگیر تعویض» — a forty-year-old car with zero kilometres and body work. Divar uses `1,000,000 km` to mean "unknown" and returns placeholder prices as low as 10,000 rials. These are **flagged and shown, never silently repaired** — a repaired number is a lie with better manners.
 
 **It reconciles units that do not agree.** Divar quotes rials; Bama and Hamrah-Mechanic quote tomans. Verified by comparing one car across sources: a 1385 Pride is `3,100,000,000` on Divar and `320,000,000` on Bama — the same ~315M tomans. All three also mix Jalali and Gregorian years *inside a single feed* depending on whether the car is domestic or imported.
+
+---
+
+## Measuring query understanding
+
+`make eval` grades the **live endpoint**, not a library. A parser unit test can
+pass while a stale index or a routing change has broken what users actually
+reach, so the harness sends each golden query to a running `/api/v1/search` and
+grades the `intent` that comes back.
+
+```
+$ make eval
+literal   50/50   100.0%     everyday queries
+hard      30/30   100.0%     ranges, decimals, Finglish, brand-less models
+messy     10/12    83.3%     misspellings and colloquial names
+                             p50 1ms · $0.0000/query · 0 model calls
+```
+
+**The first golden set scored 100/100, and that was a warning, not a win.** It
+was written with knowledge of the parser, so it mostly asserted what was already
+implemented. A second set written from how people actually search scored
+**76.7%** with seven real failures — year ranges, price ranges, decimal
+billions, bare Gregorian years, and models named without their brand. All were
+fixed in rules, because rules could genuinely do them.
+
+A third set of misspellings and colloquial names then scored **75%**, and its
+remaining two failures are the useful ones: they need Persian numbers written as
+words — «ماشین زیر **پونصد** میلیون», «مدل **نود و پنج**». That is where a regex
+engine stops being the right tool, and it is a **measured** argument for adding a
+model rather than an assumed one.
+
+Thresholds differ per set on purpose. The solved sets gate at 100% so any drop
+is a regression; the messy set gates at its current 83% as a floor that rises
+when the model lands. Both run in CI on every push.
 
 ---
 
