@@ -72,6 +72,25 @@ services:
       - ollamadata:/root/.ollama
     expose:
       - "11434"
+    environment:
+      AI_MODEL: ${AI_MODEL:-qwen2.5:7b}
+    # Pull the model on boot rather than baking a 5 GB layer into an image.
+    # `ollama pull` is a no-op once the weights are in the volume, so this is
+    # idempotent across restarts and survives a rebuild — the alternative is a
+    # manual step that silently stops happening.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        ollama pull "$${AI_MODEL}" || echo "model pull failed; explanations will fall back to templates"
+        wait
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q ."]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
     # Never exposed publicly: the AI service reaches it over the compose network
     # only. An open Ollama port is an open compute endpoint.
     restart: unless-stopped
