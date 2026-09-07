@@ -117,3 +117,40 @@ func TestStatsFieldsSurviveTheRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestPrecomputedExplanationsParse guards the fifth Python-to-Go schema
+// mismatch, and the first that was a type error rather than a dropped field.
+//
+// The guard reports decimals, so rejected_numbers is a float. Declared as int,
+// every reload failed — and the reload path caught the error and kept the
+// previous set, which was empty. The failure was total, logged, and invisible
+// in the product: the API simply served no precomputed explanations at all.
+func TestPrecomputedExplanationsParse(t *testing.T) {
+	raw := []byte(`{
+	  "built_at": "2026-09-07T12:01:40Z",
+	  "explanations": {
+	    "peugeot/207/base/mt/1404/0": {
+	      "text": "این خودرو ارزان‌ترین گزینه است.",
+	      "source": "llm",
+	      "rejected_numbers": [13500.0, 11.6],
+	      "rejected_topics": ["warranty"],
+	      "usage": {"model": "qwen2.5:7b", "latency_ms": 18547.2, "cost_usd": 0}
+	    }
+	  }
+	}`)
+
+	var file explanationFile
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("precomputed explanations did not parse: %v", err)
+	}
+	got, ok := file.Explanations["peugeot/207/base/mt/1404/0"]
+	if !ok {
+		t.Fatal("explanation missing after parse")
+	}
+	if len(got.RejectedNumbers) != 2 || got.RejectedNumbers[1] != 11.6 {
+		t.Errorf("rejected_numbers = %v, want the decimal preserved", got.RejectedNumbers)
+	}
+	if got.Source != "llm" || got.Text == "" {
+		t.Errorf("explanation did not round-trip: %+v", got)
+	}
+}

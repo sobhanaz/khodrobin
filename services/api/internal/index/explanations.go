@@ -15,10 +15,15 @@ import (
 // pipeline makes: cluster, normalize and now explain offline, so the request
 // path only reads.
 type Explanation struct {
-	Text            string         `json:"text"`
-	Source          string         `json:"source"`
-	Fingerprint     string         `json:"fingerprint"`
-	RejectedNumbers []int          `json:"rejected_numbers"`
+	Text        string `json:"text"`
+	Source      string `json:"source"`
+	Fingerprint string `json:"fingerprint"`
+	// float64, not int. The guard reports decimals — «۱۱.۶٪» is one number, not
+	// 116 — and an int here made every reload fail with an unmarshal error,
+	// which the reload path then handled gracefully by keeping the previous
+	// set. The previous set was empty, so the service served zero precomputed
+	// explanations indefinitely while logging a warning nobody was reading.
+	RejectedNumbers []float64      `json:"rejected_numbers"`
 	RejectedTopics  []string       `json:"rejected_topics"`
 	Usage           map[string]any `json:"usage"`
 }
