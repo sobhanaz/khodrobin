@@ -61,14 +61,18 @@ type Spec struct {
 }
 
 type Stats struct {
-	Listings         int      `json:"listings"`
-	Indexed          int      `json:"indexed"`
-	Unresolved       int      `json:"unresolved"`
-	ResolvedPct      float64  `json:"resolved_pct"`
-	Specs            int      `json:"specs"`
-	MultiSourceSpecs int      `json:"multi_source_specs"`
-	FlaggedOffers    int      `json:"flagged_offers"`
-	Sources          []string `json:"sources"`
+	// ListingsCaptured is rows fetched; Listings is what survives collapsing
+	// re-crawls of the same ad. Reporting only one of them hides the other.
+	ListingsCaptured    int      `json:"listings_captured"`
+	DuplicatesCollapsed int      `json:"duplicates_collapsed"`
+	Listings            int      `json:"listings"`
+	Indexed             int      `json:"indexed"`
+	Unresolved          int      `json:"unresolved"`
+	ResolvedPct         float64  `json:"resolved_pct"`
+	Specs               int      `json:"specs"`
+	MultiSourceSpecs    int      `json:"multi_source_specs"`
+	FlaggedOffers       int      `json:"flagged_offers"`
+	Sources             []string `json:"sources"`
 }
 
 type Alias struct {

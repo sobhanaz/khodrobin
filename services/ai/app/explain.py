@@ -43,15 +43,40 @@ SYSTEM = """تو یک مشاور خرید خودرو هستی. دقیقاً دو
 «در ازای آن کمترین کارکرد را از دست می‌دهی» — کارکرد کم مزیت است؛ از دست دادنش بی‌معنی است."""
 
 
-def digits_in(text: str) -> set[int]:
-    """Every integer mentioned, in either digit system, separators removed."""
+# Grouping marks Persian and English writers both use. The decimal point is
+# deliberately absent: treating "." as a separator turned «۱۱.۶٪» into 116 and
+# «۲.۱ میلیارد» into 21, so the guard rejected the model for citing figures it
+# had never written. Caught in production, rejecting a correct explanation.
+GROUPING = ",،٬  ‏‎"
+
+_NUMBER = re.compile(r"\d[\d,،٬\u00a0\u200f\u200e ]*(?:\.\d+)?")
+
+
+def numbers_in(text: str) -> set[float]:
+    """Every quantity mentioned, in either digit system.
+
+    Returns floats because Persian writes percentages with a decimal — «۱۱.۶٪»
+    is one number, not 116.
+    """
     normalized = text.translate(FA_DIGITS)
-    found: set[int] = set()
-    for raw in re.findall(r"\d[\d,،٬.\s]*", normalized):
-        cleaned = re.sub(r"[^\d]", "", raw)
-        if cleaned:
-            found.add(int(cleaned))
+    found: set[float] = set()
+    for raw in _NUMBER.findall(normalized):
+        cleaned = raw
+        for ch in GROUPING:
+            cleaned = cleaned.replace(ch, "")
+        cleaned = cleaned.rstrip(".")
+        if not cleaned:
+            continue
+        try:
+            found.add(float(cleaned))
+        except ValueError:
+            continue
     return found
+
+
+def digits_in(text: str) -> set[int]:
+    """Integer view of numbers_in, for callers that only care about whole values."""
+    return {int(n) for n in numbers_in(text) if n == int(n)}
 
 
 def supported_numbers(facts: dict) -> set[int]:
@@ -61,17 +86,22 @@ def supported_numbers(facts: dict) -> set[int]:
     «۲۱۱۴ میلیون». Accepting only the exact integer would reject correct,
     natural Persian — so the scaled forms are pre-computed and allowed too.
     """
-    allowed: set[int] = set()
+    allowed: set[float] = set()
 
-    def add(n: int | None) -> None:
+    def add(n: float | None) -> None:
         if n is None:
             return
-        allowed.add(int(n))
-        # Percentages and unit-scaled restatements of the same figure.
+        n = float(n)
+        allowed.add(n)
+        if n == int(n):
+            allowed.add(float(int(n)))
+        # Unit-scaled restatements of the same figure: 2,114,000,000 tomans is
+        # legitimately «۲۱۱۴ میلیون» or «۲.۱ میلیارد».
         for scale in (1_000, 1_000_000, 1_000_000_000):
-            if n % scale == 0:
-                allowed.add(n // scale)
-            allowed.add(round(n / scale))
+            scaled = n / scale
+            allowed.add(scaled)
+            allowed.add(float(round(scaled)))
+            allowed.add(round(scaled, 1))
 
     # Iranian model names are numbers: ۲۰۶، ۴۰۵، ۱۳۱، X33. Saying the car's own
     # name is not a claim about it, and flagging «پژو ۲۰۷» as an invented figure
@@ -81,7 +111,12 @@ def supported_numbers(facts: dict) -> set[int]:
     for offer in facts.get("offers", []):
         add(offer.get("price"))
         add(offer.get("mileage_km"))
-        add(abs(int(round(offer.get("vs_median_pct", 0)))))
+        # The percentage is given as a decimal and the model quotes it that way,
+        # so both the exact value and its rounding are legitimate.
+        pct = offer.get("vs_median_pct")
+        if pct is not None:
+            add(abs(float(pct)))
+            add(float(abs(round(float(pct)))))
     for key in ("median_price", "min_price", "max_price", "year",
                 "offer_count", "source_count"):
         add(facts.get(key))
@@ -153,7 +188,17 @@ class Verdict:
     source: str  # model | fallback
 
 
-def check(text: str, facts: dict) -> tuple[bool, list[int], list[str]]:
+# Floats compared for equality need a tolerance. This one is tight enough that
+# 11.6 does not match 11.7, and loose enough to absorb the representation error
+# of dividing a billion by a billion.
+EPSILON = 1e-6
+
+
+def _supported(value: float, allowed: set[float]) -> bool:
+    return any(abs(value - a) <= EPSILON for a in allowed)
+
+
+def check(text: str, facts: dict) -> tuple[bool, list[float], list[str]]:
     """Verify the explanation against its input.
 
     Two independent checks, because the model fails in two different ways:
@@ -161,9 +206,12 @@ def check(text: str, facts: dict) -> tuple[bool, list[int], list[str]]:
     fabrications through.
     """
     allowed = supported_numbers(facts)
-    bad_numbers = [n for n in digits_in(text) if n >= IGNORE_BELOW and n not in allowed]
+    bad_numbers = [
+        n for n in numbers_in(text)
+        if n >= IGNORE_BELOW and not _supported(n, allowed)
+    ]
     bad_topics = forbidden_claims(text, facts)
-    return (not bad_numbers and not bad_topics), bad_numbers, bad_topics
+    return (not bad_numbers and not bad_topics), sorted(bad_numbers), bad_topics
 
 
 def fallback(facts: dict) -> str:

@@ -10,7 +10,9 @@ import (
 // added upstream simply vanishes with no error anywhere — which is exactly how
 // car photos reached the index and never reached the page.
 //
-// This pins the fields the UI depends on.
+// This has now bitten three times: car photos, then duplicates_collapsed, then
+// listings_captured. Each was written by the Python pipeline, logged as present,
+// and silently discarded by Go on the way out. So the pin covers Stats too.
 func TestFieldsTheUIDependsOnSurviveTheRoundTrip(t *testing.T) {
 	raw := []byte(`{
 	  "key":"peugeot/207/base/mt/1404/0",
@@ -60,6 +62,55 @@ func TestFieldsTheUIDependsOnSurviveTheRoundTrip(t *testing.T) {
 	} {
 		if _, ok := back[field]; !ok {
 			t.Errorf("field %q missing from the response", field)
+		}
+	}
+}
+
+// TestStatsFieldsSurviveTheRoundTrip guards the same failure as above, for the
+// numbers an operator reads rather than the ones the page renders.
+//
+// duplicates_collapsed was dropped exactly this way: the crawler collapsed 3,889
+// repeat listings, logged it, and the API reported nothing — so the fix looked
+// like it had not shipped.
+func TestStatsFieldsSurviveTheRoundTrip(t *testing.T) {
+	raw := []byte(`{
+	  "listings_captured": 9014,
+	  "duplicates_collapsed": 3889,
+	  "listings": 5125,
+	  "indexed": 2958,
+	  "unresolved": 2167,
+	  "resolved_pct": 57.7,
+	  "specs": 2000,
+	  "multi_source_specs": 239,
+	  "flagged_offers": 23,
+	  "sources": ["bama","divar","hamrah","khodro45"]
+	}`)
+
+	var stats Stats
+	if err := json.Unmarshal(raw, &stats); err != nil {
+		t.Fatal(err)
+	}
+	if stats.ListingsCaptured != 9014 {
+		t.Errorf("listings_captured = %d, want 9014", stats.ListingsCaptured)
+	}
+	if stats.DuplicatesCollapsed != 3889 {
+		t.Errorf("duplicates_collapsed = %d, want 3889", stats.DuplicatesCollapsed)
+	}
+
+	out, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back map[string]any
+	if err := json.Unmarshal(out, &back); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"listings_captured", "duplicates_collapsed", "listings", "indexed",
+		"resolved_pct", "specs", "multi_source_specs", "flagged_offers", "sources",
+	} {
+		if _, ok := back[field]; !ok {
+			t.Errorf("stats field %q was dropped on the way out", field)
 		}
 	}
 }

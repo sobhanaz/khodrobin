@@ -68,7 +68,8 @@ def build(raw_path: pathlib.Path) -> dict:
     newest: dict[tuple[str, str], dict] = {}
     for row in sorted(rows, key=lambda r: r.get("fetched_at") or ""):
         newest[(row["source"], str(row["source_id"]))] = row
-    duplicates_collapsed = len(rows) - len(newest)
+    captured = len(rows)
+    duplicates_collapsed = captured - len(newest)
     rows = list(newest.values())
 
     groups: dict[str, list[dict]] = defaultdict(list)
@@ -171,6 +172,10 @@ def build(raw_path: pathlib.Path) -> dict:
     return {
         "built_at": datetime.now(timezone.utc).isoformat(),
         "stats": {
+            # Three different numbers people conflate: rows we captured, rows
+            # left after collapsing re-crawls, and rows that resolved to a
+            # priced spec. Reporting only one of them hides the other two.
+            "listings_captured": captured,
             "listings": len(rows),
             "indexed": resolved,
             "unresolved": unresolved,
