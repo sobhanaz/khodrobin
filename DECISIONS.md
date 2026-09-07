@@ -328,3 +328,33 @@ A link the reviewer cannot open is not a partial failure. It looks identical to 
 **Choice.** Offers sort flagged-last within a spec, and flagged offers are removed before the top three reach the model — falling back to the raw list only when every offer is flagged, because some explanation beats none.
 
 **Trade-off accepted.** A genuinely cheap listing that trips a flag gets buried. That is the right direction to be wrong in: showing a real bargain second costs a user one scroll, while leading with a حواله costs them their trust in every number on the page.
+
+---
+
+## ۱۹. راست بودن کافی نیست — a true sentence can still be nonsense
+
+**Context.** Four guard axes all asked the same question in different ways: *did the model invent this?* Numbers, percentages, topics and sources are each a way of catching a fabrication.
+
+**What got through.** A live card read «این خودرو با قیمت ۸۲۸,۰۰۰,۰۰۰ تومان، ۵۵.۷٪ زیر میانه‌ی بازار است. در عوض، کارکرد صفر کیلومتر را **از دست می‌دهی**» — *in exchange, you lose the zero kilometres.* The price is real. The percentage is real. The mileage is real. All four axes passed it, correctly, and the sentence is still absurd — it names the top offer's best feature as the thing you sacrifice by choosing it.
+
+**Why it happens, structurally.** The prompt asks the second sentence to name a trade-off. When the cheapest offer is also the newest with the lowest mileage, there is no trade-off to name — and a model instructed to produce one produces one anyway. Measured across the live index: **10% of model explanations used loss framing**, several pointed at a dimension the top offer led. The system prompt already warns against exactly this; a prompt is a request.
+
+**Choice.** A fifth axis. Loss framing («از دست می‌دهی», «چشم‌پوشی») is rejected when it lands on a dimension where the top offer is the best of its cohort. The fallback — assembled from data, so coherent by construction — takes over.
+
+**Trade-off accepted.** It is a phrase list, so it is Persian-specific and incomplete; a model can express the same idea in words it does not contain. It catches the failure that actually occurred at the rate it actually occurred, which beats a general solution that does not exist.
+
+**The general form.** *Accuracy and coherence are independent properties, and only one of them was being checked.* Compare ۱۸: an explanation can also be accurate and coherent and still be about the wrong thing.
+
+---
+
+## ۲۰. نسخه‌ای که کسی باید یادش باشد، نسخه نیست — a version constant is not a mechanism
+
+**Context.** After adding the fifth axis, nothing changed for visitors. The guard would now reject 13 of 93 live explanations, and all 93 kept being served.
+
+**Why.** Two caches — the AI service's in-memory LRU and the warm file the crawler writes every three hours — both key on the **data**. Prices had not moved, so every entry was considered fresh. Both had a knob for exactly this case: `PROMPT_VERSION`, sitting at `"1"`, with a comment saying to bump it when the prompt changed. The prompt and the guard had changed a dozen times. It had never been bumped, and nothing had ever noticed.
+
+**Choice.** `PROMPT_VERSION` is now a SHA-256 of the guard module's own source, published on `/health` and folded into the warm fingerprint. Editing the guard expires everything the old guard approved, in both caches, without anyone deciding to.
+
+**Trade-off accepted.** It is coarse — a comment change invalidates 149 explanations and costs ~25 minutes of background regeneration inside a 1800s budget. That is the cheap resource in this architecture, and the precise alternative (re-validating each cached text) needs the guard inside the crawler image, which builds from `services/crawler/` alone. Wrong resource to optimise.
+
+**The general form.** *A safety mechanism that depends on someone remembering is documentation, not a mechanism.* The failure mode is silence — it never errors, it just quietly stops being true.

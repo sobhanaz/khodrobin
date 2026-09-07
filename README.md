@@ -27,7 +27,7 @@ The five lines of Torob's brief map onto the modules:
 | `crawl offers` | [`services/crawler/sources/`](./services/crawler/sources) | ✅ 4 sources, plain HTTP, every 3h |
 | `normalize messy data` | [`normalize.py`](./services/crawler/normalize.py) · [`plausibility.py`](./services/crawler/plausibility.py) | ✅ units, year systems, contradiction flags |
 | `rank by user intent` | [`services/api/internal/search`](./services/api/internal/search) | ✅ 4 modes, transparent score breakdown |
-| `explain the best choice` | [`services/ai/`](./services/ai) | ✅ live, four-axis hallucination guard |
+| `explain the best choice` | [`services/ai/`](./services/ai) | ✅ live, five-axis hallucination guard |
 | `ship demo.mp4` | — | 🚧 the remaining piece |
 
 ## Live numbers
@@ -75,7 +75,7 @@ A third set of misspellings then scored **75%**, and its two remaining failures 
 
 ## The guard
 
-The interesting part of the AI layer is not the prompt. Every explanation is verified against its own input on four independent axes, because the model invents in four different ways:
+The interesting part of the AI layer is not the prompt. Every explanation is verified against its own input on five independent axes, because the model goes wrong in five different ways:
 
 | Check | Catches |
 |---|---|
@@ -83,8 +83,13 @@ The interesting part of the AI layer is not the prompt. Every explanation is ver
 | percentages | a position against the median no offer supports |
 | topics | a subject the input never mentioned — warranty, paint, options |
 | sources | an offer attributed to a marketplace with no listing here |
+| coherence | a **true** statement that makes no sense |
 
-Two of these exist because a real model produced the failure. Asked to explain a Peugeot 207, qwen2.5:7b invented a mechanical warranty — no number, so a numeric guard rated it clean. And percentages went unchecked entirely until an audit found that the small-number filter was hiding the product's headline claim: «۴۵٪ زیر میانه» passed on a car that was 21.5٪ under.
+Three of these exist because a real model produced the failure. Asked to explain a Peugeot 207, qwen2.5:7b invented a mechanical warranty — no number, so a numeric guard rated it clean. Percentages went unchecked entirely until an audit found that the small-number filter was hiding the product's headline claim: «۴۵٪ زیر میانه» passed on a car that was 21.5٪ under.
+
+The fifth is the one worth reading twice. A live card said «کارکرد صفر کیلومتر را **از دست می‌دهی**» — *in exchange, you lose the zero kilometres*. Every number in it is true, so all four factual axes passed it, and it is still nonsense. The cause is structural: the prompt asks the second sentence to name a trade-off, and when the cheapest offer is also the newest with the lowest mileage there is no trade-off to name. A model asked for one will supply one. Measured across the live index, **10% of explanations did this**. So the guard now rejects loss framing pointed at a dimension the top offer leads.
+
+Truth and sense are different properties, and only one of them was being checked.
 
 **A prompt is a request; a guard is a guarantee.** When the guard fires, the card says so and shows what was rejected, then falls back to a sentence assembled from the data — always available, always true. Verified across the whole index: every fallback satisfies the guard it exists to satisfy.
 

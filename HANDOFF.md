@@ -6,7 +6,7 @@
 
 ## The one-paragraph state
 
-**خودروبین is live at <https://khodrobin.noxioai.com>.** Five services on one box: a Python crawler over four Iranian marketplaces, a Go search API, a FastAPI model layer with a four-axis hallucination guard, a Go accounts service, and a server-rendered Nuxt front end in Persian RTL. Everything ships from GitHub — push to `main` → build → GHCR → deploy → smoke test. Four of the five rubric lines are implemented and deployed; the demo video is the one that remains.
+**خودروبین is live at <https://khodrobin.noxioai.com>.** Five services on one box: a Python crawler over four Iranian marketplaces, a Go search API, a FastAPI model layer with a five-axis hallucination guard, a Go accounts service, and a server-rendered Nuxt front end in Persian RTL. Everything ships from GitHub — push to `main` → build → GHCR → deploy → smoke test. Four of the five rubric lines are implemented and deployed; the demo video is the one that remains.
 
 ---
 
@@ -50,7 +50,7 @@ GitHub **variables** (non-sensitive): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SM
 - **Deduplication.** 40% of captured rows are re-crawls of the same ad; collapsed before anything counts them.
 - **Contradiction and outlier flags**, shown rather than silently repaired. Flagged offers sink below clean ones and never lead an explanation.
 - **Deterministic ranking** in Go, four modes, returning its own per-factor breakdown — which is what makes the «پشت صحنه» panel honest.
-- **Explanations** from a local model, with a four-axis guard and a templated fallback that always passes it.
+- **Explanations** from a local model, with a five-axis guard and a templated fallback that always passes it. Warmed ahead of time on a schedule: 149 precomputed, ~0.8s served instead of ~10s generated.
 - **Accounts**: register → verify → login → saved searches → price alerts. SMTP confirmed working.
 - **SEO**: per-car SSR pages with `schema.org/Car`, generated sitemap, generated robots.
 - **CI**: gofmt, vet, race tests, Python tests, Nuxt build, Caddyfile validation, and the eval thresholds.
@@ -67,7 +67,7 @@ Pages: `/`, `/about`, `/faq`, `/contact`, `/login`, `/register`, `/verify`, `/ac
 UPDATE users SET is_admin = TRUE WHERE email = 'sobhandevuk@gmail.com';
 ```
 
-**2. Explanation warming reports zero.** `/api/v1/stats` shows `explanations.warmed: 0`. On-demand explanations work (verified live), so this only costs first-visit latency on cold specs. Check `docker compose logs crawler` for the `warm_explanations.py` run and whether it writes `/data/explanations.json` before its budget expires.
+**2. SMTP deliverability.** Mail sends and is logged, but the domain has no SPF, DKIM or DMARC record, so verification email lands in spam — which is how the first admin account got stuck. Either add the three DNS records or move to a transactional provider; leaving it is a real signup funnel leak.
 
 **3. The server root password is still the one shared in chat** on 6 Sep, and that transcript is not private. The Actions deploy key is installed and working, so rotating costs nothing operationally.
 
@@ -100,6 +100,8 @@ Each one passed every check while being broken. That is the point of the story: 
 6. **The guard then rejected correct output.** `11.6٪` parsed as `116` because `.` was treated as a thousands separator.
 7. **Four fields silently dropped between Python and Go.** `encoding/json` discards unknown fields without error: car photos, `duplicates_collapsed`, `listings_captured`, `median_reliable`.
 8. **A flagged outlier still led the card.** A «حواله» listing at 82% under its cohort was detected, tagged — and still shown first, and still handed to the model to justify.
+9. **The guard passed a sentence that was true and meaningless.** «کارکرد صفر کیلومتر را از دست می‌دهی» — *you lose the zero kilometres* — cleared all four factual axes because every number in it was correct. 10% of live explanations framed the top offer's best feature as a sacrifice.
+10. **Tightening the guard changed nothing.** Both caches key on the data, so 149 warm explanations survived a rule change that would now reject 13 of them. `PROMPT_VERSION` had sat at `"1"` through a dozen prompt and guard edits — the safety mechanism was a constant someone had to remember, and nobody ever had.
 
 ---
 
