@@ -1,0 +1,214 @@
+"""Write two Persian sentences saying why the top result wins — and prove it.
+
+The interesting part of this module is not the prompt. It is the guard
+underneath it.
+
+A model asked to explain a car listing will, sooner or later, state a fact that
+was not in its input: a mileage it rounded, a price it recalculated, a year it
+inferred. On a price-comparison product that is not a cosmetic flaw — the whole
+value proposition is that the numbers are trustworthy. So every number the model
+emits is checked against the numbers it was given, and an explanation containing
+an unsupported one is thrown away and replaced by a templated sentence built
+from the data itself.
+
+The product therefore always has an explanation, and the explanation is always
+true. Those two properties matter more than eloquence.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+
+# Numbers this small are ordinary prose — «دو منبع», «۳ آگهی» — not claims about
+# the car. Checking them produces false alarms without catching anything real.
+IGNORE_BELOW = 100
+
+SYSTEM = """تو یک مشاور خرید خودرو هستی. دقیقاً دو جمله‌ی کوتاه فارسی می‌نویسی که توضیح می‌دهد چرا گزینه‌ی اول بهترین انتخاب است.
+
+قواعد سخت‌گیرانه:
+- فقط از عددها و واقعیت‌هایی استفاده کن که در داده‌ی ورودی آمده‌اند. هیچ عددی از خودت نساز و هیچ عددی را گرد نکن.
+- جمله‌ی اول: چرا گزینه‌ی اول برنده است.
+- جمله‌ی دوم: در ازای آن چه چیزی را از دست می‌دهی (مقایسه با گزینه‌ی دوم).
+- درباره‌ی چیزی که در داده نیست حرف نزن: رنگ، بیمه، شرایط فروشنده، وضعیت موتور.
+- بدون مقدمه، بدون فهرست، بدون ایموجی. فقط دو جمله."""
+
+
+def digits_in(text: str) -> set[int]:
+    """Every integer mentioned, in either digit system, separators removed."""
+    normalized = text.translate(FA_DIGITS)
+    found: set[int] = set()
+    for raw in re.findall(r"\d[\d,،٬.\s]*", normalized):
+        cleaned = re.sub(r"[^\d]", "", raw)
+        if cleaned:
+            found.add(int(cleaned))
+    return found
+
+
+def supported_numbers(facts: dict) -> set[int]:
+    """Numbers the model is allowed to say, plus the forms it may say them in.
+
+    A price of 2,114,000,000 tomans is legitimately written as «۲.۱ میلیارد» or
+    «۲۱۱۴ میلیون». Accepting only the exact integer would reject correct,
+    natural Persian — so the scaled forms are pre-computed and allowed too.
+    """
+    allowed: set[int] = set()
+
+    def add(n: int | None) -> None:
+        if n is None:
+            return
+        allowed.add(int(n))
+        # Percentages and unit-scaled restatements of the same figure.
+        for scale in (1_000, 1_000_000, 1_000_000_000):
+            if n % scale == 0:
+                allowed.add(n // scale)
+            allowed.add(round(n / scale))
+
+    # Iranian model names are numbers: ۲۰۶، ۴۰۵، ۱۳۱، X33. Saying the car's own
+    # name is not a claim about it, and flagging «پژو ۲۰۷» as an invented figure
+    # would reject every correct explanation ever written.
+    for n in digits_in(facts.get("title") or ""):
+        allowed.add(n)
+    for offer in facts.get("offers", []):
+        add(offer.get("price"))
+        add(offer.get("mileage_km"))
+        add(abs(int(round(offer.get("vs_median_pct", 0)))))
+    for key in ("median_price", "min_price", "max_price", "year",
+                "offer_count", "source_count"):
+        add(facts.get(key))
+    # Comparing two offers is the point of the product, so the differences
+    # between them are derived facts rather than invented ones. Only pairwise
+    # gaps between given prices and given mileages are allowed — not arbitrary
+    # arithmetic, which would widen the guard until it caught nothing.
+    offers = facts.get("offers", [])
+    for i, a in enumerate(offers):
+        for b in offers[i + 1:]:
+            for field in ("price", "mileage_km"):
+                x, y = a.get(field), b.get(field)
+                if x is not None and y is not None:
+                    add(abs(int(x) - int(y)))
+
+    if facts.get("km_bucket") is not None:
+        b = facts["km_bucket"]
+        add(b * 25)
+        add((b + 1) * 25)
+        add(b * 25_000)
+        add((b + 1) * 25_000)
+    return allowed
+
+
+@dataclass
+class Verdict:
+    ok: bool
+    text: str
+    unsupported: list[int]
+    source: str  # model | fallback
+
+
+def check(text: str, facts: dict) -> tuple[bool, list[int]]:
+    """True when every number in the text is one the input actually contained."""
+    allowed = supported_numbers(facts)
+    bad = [n for n in digits_in(text) if n >= IGNORE_BELOW and n not in allowed]
+    return (not bad), bad
+
+
+def fallback(facts: dict) -> str:
+    """A templated explanation assembled only from the data.
+
+    Used when the model is unreachable, too slow, or caught inventing a number.
+    It is less fluent and completely true, which is the right trade for a
+    product whose claim is that its numbers can be trusted.
+    """
+    offers = facts.get("offers", [])
+    if not offers:
+        return "برای این خودرو آگهی کافی نداریم."
+
+    best = offers[0]
+    pct = abs(int(round(best.get("vs_median_pct", 0))))
+    median = facts.get("median_price", 0)
+    name = facts.get("title", "این خودرو")
+
+    first = (
+        f"{name} در «{best.get('source_fa', 'این منبع')}» با قیمت "
+        f"{best.get('price', 0):,} تومان، {pct}٪ پایین‌تر از میانه‌ی "
+        f"{median:,} تومانی این مدل است."
+    ) if pct else (
+        f"{name} در «{best.get('source_fa', 'این منبع')}» با قیمت "
+        f"{best.get('price', 0):,} تومان، نزدیک به میانه‌ی بازار است."
+    )
+
+    if len(offers) > 1:
+        second = offers[1]
+        km_a, km_b = best.get("mileage_km"), second.get("mileage_km")
+        if km_a is not None and km_b is not None and km_a != km_b:
+            more = "بیشتر" if km_a > km_b else "کمتر"
+            second_sentence = (
+                f"در عوض {abs(km_a - km_b):,} کیلومتر {more} از گزینه‌ی بعدی "
+                f"({second.get('price', 0):,} تومان) کار کرده است."
+            )
+        else:
+            second_sentence = (
+                f"گزینه‌ی بعدی {second.get('price', 0):,} تومان است "
+                f"از «{second.get('source_fa', 'منبعی دیگر')}»."
+            )
+    else:
+        second_sentence = (
+            f"این مدل فقط {facts.get('offer_count', 1)} آگهی دارد، "
+            "پس میانه‌ی قیمت هنوز کم‌اعتبار است."
+        )
+
+    return f"{first} {second_sentence}"
+
+
+def build_prompt(facts: dict) -> str:
+    """Hand the model a compact, closed set of facts.
+
+    Passing the whole spec object invites the model to comment on fields that
+    are not decision-relevant. Only what a buyer would weigh goes in.
+    """
+    lines = [
+        f"خودرو: {facts.get('title', '')}",
+        f"سال: {facts.get('year', '')}",
+        f"میانه‌ی قیمت: {facts.get('median_price', 0):,} تومان",
+        f"تعداد آگهی: {facts.get('offer_count', 0)} از {facts.get('source_count', 0)} منبع",
+        "",
+        "آگهی‌ها (به ترتیب قیمت):",
+    ]
+    for i, o in enumerate(facts.get("offers", [])[:3], 1):
+        km = o.get("mileage_km")
+        lines.append(
+            f"{i}. {o.get('source_fa', '')} — {o.get('price', 0):,} تومان"
+            f" — {o.get('vs_median_pct', 0)}٪ نسبت به میانه"
+            + (f" — کارکرد {km:,} کیلومتر" if km is not None else "")
+        )
+    if facts.get("flags"):
+        lines.append("")
+        lines.append("هشدارها: " + "؛ ".join(facts["flags"]))
+    return "\n".join(lines)
+
+
+def facts_from_spec(spec: dict) -> dict:
+    """Reduce an index spec to the decision-relevant facts."""
+    offers = spec.get("offers", [])[:3]
+    name_parts = [spec.get("brand_fa", ""), spec.get("model_fa", "")]
+    return {
+        "title": " ".join(p for p in name_parts if p).strip(),
+        "year": spec.get("year"),
+        "median_price": spec.get("median_price", 0),
+        "min_price": spec.get("min_price", 0),
+        "max_price": spec.get("max_price", 0),
+        "offer_count": spec.get("offer_count", 0),
+        "source_count": spec.get("source_count", 0),
+        "km_bucket": spec.get("km_bucket"),
+        "offers": [
+            {
+                "source_fa": o.get("source_fa"),
+                "price": o.get("price", 0),
+                "mileage_km": o.get("mileage_km"),
+                "vs_median_pct": o.get("vs_median_pct", 0),
+            }
+            for o in offers
+        ],
+        "flags": [f.get("message", "") for o in offers for f in (o.get("flags") or [])],
+    }
