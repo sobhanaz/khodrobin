@@ -110,6 +110,9 @@ useSeoMeta({
 
     <LandingProof :stats="stats" />
 
+    <!-- The other way in: not a query, a listing someone already has open. -->
+    <LookupBox />
+
     <LandingSpecimen v-if="specimen" :spec="specimen" />
 
     <LandingUnits v-if="specimen" :spec="specimen" />

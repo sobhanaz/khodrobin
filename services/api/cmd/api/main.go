@@ -78,9 +78,19 @@ func main() {
 	go explains.Watch(30*time.Second, stopWatch)
 	log.Info("explanations loaded", "path", explanationsPath, "count", explains.Count())
 
+	// History sits beside the index on the same crawler volume. Missing is
+	// normal on first deploy: the endpoint answers empty lists until the
+	// crawler writes its first cycle.
+	historyPath := os.Getenv("KHODROBIN_HISTORY")
+	if historyPath == "" {
+		historyPath = "/data/history.json"
+	}
+	history := index.NewHistory(historyPath, log)
+	go history.Watch(30*time.Second, stopWatch)
+
 	// Readiness needs the store, so it is registered after the store exists.
 	mux.HandleFunc("GET /readyz", health.Ready(store))
-	mux.Handle("/", server.New(store, explains, log))
+	mux.Handle("/", server.New(store, explains, history, log))
 
 	srv := &http.Server{
 		Addr:              addr,

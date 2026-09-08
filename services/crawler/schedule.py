@@ -23,6 +23,7 @@ PAGES = os.getenv("CRAWL_PAGES", "30")
 RAW = os.getenv("CRAWL_RAW", "/data/raw/listings.jsonl")
 INDEX = os.getenv("CRAWL_INDEX", "/data/index.json")
 EXPLANATIONS = os.getenv("CRAWL_EXPLANATIONS", "/data/explanations.json")
+HISTORY = os.getenv("CRAWL_HISTORY", "/data/history.json")
 AI_URL = os.getenv("CRAWL_AI_URL", "http://ai:8000")
 WARM_LIMIT = os.getenv("CRAWL_WARM_LIMIT", "120")
 WARM_BUDGET = os.getenv("CRAWL_WARM_BUDGET_SECONDS", "1800")
@@ -52,6 +53,17 @@ def bootstrap() -> None:
     log(f"seeded {RAW} from {SEED} ({raw.stat().st_size / 1e6:.1f} MB)")
 
 
+def record_history() -> None:
+    """Append this cycle's medians to the price history, right after the index
+    lands. This runs before warming because warming can spend its whole
+    30-minute budget, and the history point describes the index just written,
+    not the index half an hour from now.
+    """
+    rc = run([sys.executable, "record_history.py", "--index", INDEX, "--out", HISTORY])
+    if rc != 0:
+        log(f"history recording exited {rc}; the chart misses a point, the cycle continues")
+
+
 def warm_explanations() -> None:
     rc = run([sys.executable, "warm_explanations.py", "--index", INDEX,
               "--out", EXPLANATIONS, "--ai", AI_URL,
@@ -72,6 +84,7 @@ def rebuild_only() -> None:
     if rc != 0:
         log(f"startup rebuild failed ({rc}); the API keeps serving the previous index")
         return
+    record_history()
     warm_explanations()
 
 
@@ -84,6 +97,7 @@ def cycle() -> None:
     if rc != 0:
         log(f"index build failed ({rc}); the API keeps serving the previous index")
         return
+    record_history()
     # Explanations take ~10s each on CPU, which is fine here and unacceptable in
     # a request. Warming the top specs after every rebuild keeps «چرا این؟»
     # instant for everything a visitor sees first.

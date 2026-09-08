@@ -72,7 +72,9 @@ useHead(() => ({
     : [],
 }))
 
-const ALL_SOURCES = ['دیوار', 'باما', 'همراه‌مکانیک', 'خودرو۴۵']
+// شیپور was crawled after this list was first written; without it, sheypoor
+// offers appeared in the drawer but the badge row silently denied they exist.
+const ALL_SOURCES = ['دیوار', 'باما', 'همراه‌مکانیک', 'خودرو۴۵', 'شیپور']
 const bySource = computed(() => {
   const map = new Map<string, Spec['offers']>()
   for (const o of [...(spec.value?.offers ?? [])].sort((a, b) => a.price - b.price)) {
@@ -98,7 +100,9 @@ const bySource = computed(() => {
       <CarImage :src="spec.image ?? null" :alt="heading" class="!w-full sm:!w-56" />
 
       <div class="min-w-0 flex-1">
-        <h1 class="text-[clamp(1.4rem,3.5vw,2rem)] font-black tracking-tight">{{ heading }}</h1>
+        <!-- No tracking-tight here: the heading is Persian, and Persian
+             letters join; negative tracking pulls the strokes into each other. -->
+        <h1 class="text-[clamp(1.4rem,3.5vw,2rem)] font-black">{{ heading }}</h1>
 
         <div class="mt-3 flex flex-wrap gap-1.5">
           <span class="rounded-md border border-white/[.07] bg-surface-2 px-2 py-0.5 text-[.78rem] text-ink-2">
@@ -136,6 +140,16 @@ const bySource = computed(() => {
       </div>
     </div>
 
+    <!-- Reading order is the buyer's, not the system's: what it costs and
+         where it sits → where the price has been → why this one → the raw
+         offers → what to ask on the phone → what else to look at. -->
+    <section class="mt-10">
+      <h2 class="mb-3 text-[1.05rem] font-bold">نمودار قیمت</h2>
+      <div class="rounded-2xl border border-white/[.07] bg-surface p-5">
+        <PriceHistory :spec-key="spec.key" />
+      </div>
+    </section>
+
     <section class="mt-10">
       <h2 class="mb-3 text-[1.05rem] font-bold">چرا این گزینه؟</h2>
       <div class="rounded-2xl border border-white/[.07] bg-surface p-5">
@@ -152,6 +166,16 @@ const bySource = computed(() => {
         آگهی‌ها متعلق به همان سایت‌هاست. برای تماس با فروشنده روی نام منبع بزن تا آگهی اصلی باز شود.
       </p>
     </section>
+
+    <section class="mt-10">
+      <h2 class="mb-3 text-[1.05rem] font-bold">قبل از تماس بپرس</h2>
+      <div class="rounded-2xl border border-white/[.07] bg-surface p-5">
+        <CallChecklist :offers="spec.offers" />
+      </div>
+    </section>
+
+    <!-- Renders its own section so an empty result removes the heading too. -->
+    <SimilarCars :spec="spec" />
 
     <NuxtLink to="/" class="mt-10 inline-block text-[.88rem] text-accent hover:underline">
       ← جست‌وجوی خودروی دیگر

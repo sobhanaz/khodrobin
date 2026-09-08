@@ -1,5 +1,23 @@
 export interface Flag { code: string; message: string }
 
+/**
+ * The filter override params /api/v1/search accepts alongside q/mode/limit.
+ *
+ * A param PRESENT in the URL beats the parsed intent for that field, and
+ * present-but-empty means "explicitly cleared: suppress what the text said".
+ * That distinction is why overrides travel as strings, never numbers — an
+ * empty string is a meaningful value here, and a numeric type would erase it.
+ */
+export const FILTER_KEYS = [
+  'brand', 'model', 'gearbox',
+  'price_min', 'price_max', 'year_min', 'year_max',
+  'sources', 'multi_only', 'unflagged',
+] as const
+export type FilterKey = (typeof FILTER_KEYS)[number]
+export type FilterOverrides = Partial<Record<FilterKey, string>>
+/** A patch to the URL's filter state: string sets, '' clears, null removes. */
+export type FilterPatch = Partial<Record<FilterKey, string | null>>
+
 export interface Offer {
   source: string; source_fa: string; title: string | null
   price: number; mileage_km: number | null

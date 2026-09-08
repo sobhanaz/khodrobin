@@ -24,6 +24,10 @@ import (
 
 // Intent is what we believe the user asked for. Every field is optional: an
 // empty Intent means "show me everything", which is a legitimate query.
+//
+// It is also the response's statement of the *effective* filter state: the
+// chips in the UI redraw from it, so after URL overrides are merged in it must
+// describe what actually filtered, not what the text said.
 type Intent struct {
 	Brand      string  `json:"brand,omitempty"`
 	BrandFa    string  `json:"brand_fa,omitempty"`
@@ -37,6 +41,14 @@ type Intent struct {
 	Priority   string  `json:"priority"`
 	Source     string  `json:"source"` // rules | llm
 	Confidence float64 `json:"confidence"`
+
+	// The three below only ever come from explicit URL parameters; no text
+	// query produces them. They live on Intent anyway so the overridden state
+	// flows through the same Matches path as everything else and the response
+	// reports them alongside the rest of the filter state.
+	Sources   []string `json:"sources,omitempty"`
+	MultiOnly bool     `json:"multi_only,omitempty"`
+	Unflagged bool     `json:"unflagged,omitempty"`
 }
 
 // Priorities are the ranking modes the UI exposes as tabs.
@@ -340,7 +352,43 @@ func Matches(s index.Spec, in Intent) bool {
 	if in.PriceMin > 0 && s.MaxPrice < in.PriceMin {
 		return false
 	}
+	// A source filter keeps a spec when any of its offers comes from a chosen
+	// marketplace, and deliberately does not rewrite the offer list: the card
+	// shows the whole market for that car, not just the sites you filtered by.
+	if len(in.Sources) > 0 && !hasAnySource(s, in.Sources) {
+		return false
+	}
+	if in.MultiOnly && s.SourceCount <= 1 {
+		return false
+	}
+	if in.Unflagged && !hasCleanOffer(s) {
+		return false
+	}
 	return true
+}
+
+func hasAnySource(s index.Spec, sources []string) bool {
+	for _, o := range s.Offers {
+		for _, want := range sources {
+			if o.Source == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasCleanOffer reports whether at least one offer carries no flag. It reads
+// the offers rather than comparing FlagCount to OfferCount because flag_count
+// counts flags, not flagged offers: one offer can carry two flags and make a
+// spec with a clean sibling look fully flagged.
+func hasCleanOffer(s index.Spec) bool {
+	for _, o := range s.Offers {
+		if len(o.Flags) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Weights are the per-factor multipliers for one ranking mode.

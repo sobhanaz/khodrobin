@@ -23,13 +23,14 @@ var uiFS embed.FS
 type Server struct {
 	store    *index.Store
 	explains *index.Explanations
+	history  *index.History
 	log      *slog.Logger
 	mux      *http.ServeMux
 	ai       *explainClient
 }
 
-func New(store *index.Store, explains *index.Explanations, log *slog.Logger) *Server {
-	s := &Server{store: store, explains: explains, log: log,
+func New(store *index.Store, explains *index.Explanations, history *index.History, log *slog.Logger) *Server {
+	s := &Server{store: store, explains: explains, history: history, log: log,
 		mux: http.NewServeMux(), ai: newExplainClient()}
 	s.routes()
 	return s
@@ -43,6 +44,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/specs/{key...}", s.handleSpec)
 	s.mux.HandleFunc("GET /api/v1/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/v1/explain/{key...}", s.handleExplain)
+	s.mux.HandleFunc("GET /api/v1/history/{key...}", s.handleHistory)
 	ui, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		// Embedded at compile time: if this fails the binary is malformed.
@@ -61,10 +63,11 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 // report how long each stage took, because the timings are part of the demo.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	q := r.URL.Query().Get("q")
-	mode := r.URL.Query().Get("mode")
+	params := r.URL.Query()
+	q := params.Get("q")
+	mode := params.Get("mode")
 	limit := 24
-	if v := r.URL.Query().Get("limit"); v != "" {
+	if v := params.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = n
 		}
@@ -72,7 +75,10 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	parseStart := time.Now()
 	idx := s.store.Get()
-	in := search.ParseQuery(q, idx.Vocab)
+	// Explicit filter parameters are merged after the parse, field by field,
+	// and the merged intent goes down the exact same Run path a parsed one
+	// does. One filtering implementation; the URL just gets the last word.
+	in := search.Override(search.ParseQuery(q, idx.Vocab), params, idx.Vocab)
 	parseMs := time.Since(parseStart).Seconds() * 1000
 
 	rankStart := time.Now()
@@ -106,6 +112,44 @@ func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "spec not found"})
+}
+
+// The history file stores points as {t, m, n} to stay small; the response
+// spells the names out because it is the public contract.
+type historyPoint struct {
+	T      string `json:"t"`
+	Median int64  `json:"median"`
+	Offers int    `json:"offers"`
+}
+
+// handleHistory serves the recorded median-price points for one spec.
+//
+// 404 means the *index* does not know the key. A known spec with no recorded
+// points is a 200 with an empty list: the feature ships before the crawler has
+// written its first history cycle, and "no history yet" is an answer, not an
+// error.
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimPrefix(r.PathValue("key"), "/")
+	idx := s.store.Get()
+	known := false
+	for i := range idx.Specs {
+		if idx.Specs[i].Key == key {
+			known = true
+			break
+		}
+	}
+	if !known {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "spec not found"})
+		return
+	}
+	pts := s.history.Get(key)
+	// make, not var: a spec with no points must serialise as [], because the
+	// chart code distinguishes "no data yet" from a field that is missing.
+	out := make([]historyPoint, 0, len(pts))
+	for _, p := range pts {
+		out = append(out, historyPoint{T: p.T, Median: p.M, Offers: p.N})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"key": key, "points": out})
 }
 
 // handleLookup answers the reverse question: given a listing URL, where else
@@ -144,7 +188,7 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	if res == nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{
 			"error":      "not_in_index",
-			"message_fa": "این آگهی توی نمایه‌ی من نیست — یا تازه آگهی شده، یا حذفش کرده‌اند، یا دور بعدی خزیده می‌شود.",
+			"message_fa": "این آگهی توی نمایه‌ی من نیست؛ یا تازه آگهی شده، یا حذفش کرده‌اند، یا دور بعدی خزیده می‌شود.",
 		})
 		return
 	}

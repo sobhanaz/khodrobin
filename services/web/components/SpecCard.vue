@@ -12,7 +12,6 @@ function toggle(panel: Panel) {
 
 const delay = computed(() => Math.min(props.index * 45, 400))
 
-const ALL_SOURCES = ['دیوار', 'باما', 'همراه‌مکانیک', 'خودرو۴۵']
 
 /** Offers grouped by marketplace, cheapest first, so each badge can link and preview. */
 const bySource = computed(() => {
