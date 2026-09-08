@@ -120,6 +120,25 @@
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto !important; }
+}
+
+@layer base {
+  /* Removes the 300ms delay browsers hold on a tap while they wait to see
+     whether it is a double-tap to zoom. Every control on the site felt very
+     slightly late on a phone, and this is the whole reason. */
+  button, a, [role="tab"], [role="button"], summary, label, input, select, textarea {
+    touch-action: manipulation;
+  }
+
+  /* Headlines set their own line breaks badly by default, leaving a single
+     word stranded on the last line. Persian headlines suffer more than Latin
+     ones because the words are longer, so a widow eats a whole line. */
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+
+  /* Anchored headings otherwise land underneath the sticky header. */
+  :target { scroll-margin-top: 5rem; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .glass { background: var(--color-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }

@@ -5,6 +5,11 @@ defineProps<{ src: string | null, alt: string }>()
  * Images are hotlinked from each marketplace's own CDN. Any of them can 404 or
  * be slow, so a broken image must degrade to a calm placeholder rather than a
  * torn icon. `no-referrer` keeps our URLs out of their logs.
+ *
+ * The intrinsic 4:3 dimensions match the wrapper's aspect ratio. The wrapper
+ * already reserves the space, so this is not what prevents layout shift; it is
+ * what keeps the box the right shape in the moment before the stylesheet has
+ * applied, and on any reader that ignores it.
  */
 const broken = ref(false)
 </script>
@@ -15,6 +20,8 @@ const broken = ref(false)
       v-if="src && !broken"
       :src="src"
       :alt="alt"
+      width="400"
+      height="300"
       loading="lazy"
       decoding="async"
       referrerpolicy="no-referrer"

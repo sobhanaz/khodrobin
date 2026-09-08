@@ -14,7 +14,7 @@ const emit = defineEmits<{ submit: [] }>()
        example teaches nothing and looks broken. -->
   <form
     class="flex flex-col gap-2 rounded-2xl border border-white/[.12] bg-surface p-1.5
-           transition-all duration-250
+           duration-250 [transition-property:border-color,box-shadow,transform]
            focus-within:-translate-y-px focus-within:border-focus/55
            focus-within:shadow-[0_0_0_4px_rgba(107,116,230,.16),0_16px_44px_-20px_rgba(0,0,0,.9)]
            sm:flex-row sm:items-center sm:gap-3"

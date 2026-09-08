@@ -43,6 +43,10 @@ const chips = computed(() => {
 </template>
 
 <style scoped>
-.chip-enter-active, .chip-leave-active { transition: all .38s var(--ease-out-quint); }
+/* Named properties, not `all`: `all` also watches layout properties that
+   change for reasons unrelated to this transition, and animates those too. */
+.chip-enter-active, .chip-leave-active {
+  transition: opacity .38s var(--ease-out-quint), transform .38s var(--ease-out-quint);
+}
 .chip-enter-from, .chip-leave-to { opacity: 0; transform: translateY(6px) scale(.94); }
 </style>

@@ -30,6 +30,11 @@ onMounted(() => {
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) input.value?.focus()
 })
 
+// An email address, a phone number or a one-time code is not prose. Underlining
+// it in red teaches nothing, and some platforms send the text away to check it.
+const spellcheckable = computed(
+  () => !['email', 'tel', 'url', 'password'].includes(props.type) && props.autocomplete !== 'one-time-code')
+
 const describedBy = computed(() => {
   const ids: string[] = []
   if (props.hint) ids.push(`${props.id}-hint`)
@@ -57,6 +62,7 @@ const describedBy = computed(() => {
         :required="required"
         :autocomplete="autocomplete"
         :placeholder="placeholder"
+        :spellcheck="spellcheckable"
         :aria-invalid="error ? 'true' : undefined"
         :aria-describedby="describedBy"
         class="w-full rounded-xl border bg-surface px-4 py-3 text-ink outline-none transition

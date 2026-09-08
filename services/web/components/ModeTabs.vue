@@ -47,7 +47,8 @@ watch(model, () => nextTick(sync))
            rounded-full p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
   >
     <span
-      class="absolute inset-y-1.5 z-0 rounded-full bg-accent transition-all duration-[380ms]"
+      class="absolute inset-y-1.5 z-0 rounded-full bg-accent duration-[380ms]
+             [transition-property:left,width]"
       :style="{ width: `${pill.width}px`, left: `${pill.left}px` }"
       :class="{ 'opacity-0': !pill.width }"
     />
