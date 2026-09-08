@@ -1,0 +1,24 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Standalone copy of components/BrandMark.vue. A favicon is fetched by the
+       browser rather than rendered by the app, so it cannot read the app's CSS
+       variables and the colours are literal here. If the brand colours move,
+       both files move. -->
+  <style>
+    .ring { stroke: #f4f6fa }
+    .body { fill: #f4f6fa }
+    /* A tab strip is not always dark. Under a light browser chrome the off-white
+       mark would vanish into it, so the ink flips while the accent does not. */
+    @media (prefers-color-scheme: light) {
+      .ring { stroke: #11141c }
+      .body { fill: #11141c }
+    }
+  </style>
+  <circle class="ring" cx="32" cy="32" r="25" stroke-width="4.5" fill="none" />
+  <circle cx="32" cy="32" r="25" fill="none"
+          stroke="#ff2e4d" stroke-width="4.5"
+          stroke-dasharray="45.8 157.1" transform="rotate(-90 32 32)" />
+  <path class="body"
+        d="M19.4 38.6v-4.2c0-1 .6-1.9 1.5-2.3l3.2-1.4 3.2-4.1c.7-.9 1.7-1.4 2.8-1.4h6.1c1.1 0 2.2.5 2.9 1.4l3.2 4.1 3.2 1.4c.9.4 1.5 1.3 1.5 2.3v4.2c0 .8-.7 1.5-1.5 1.5H20.9c-.8 0-1.5-.7-1.5-1.5Z" />
+  <circle class="body" cx="25.2" cy="40.4" r="2.9" />
+  <circle class="body" cx="38.8" cy="40.4" r="2.9" />
+</svg>

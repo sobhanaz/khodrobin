@@ -16,6 +16,15 @@ export default defineNuxtConfig({
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'color-scheme', content: 'dark' },
+        // A shared link with no card is a shared link nobody clicks, and this
+        // one gets pasted into Telegram and WhatsApp more than anywhere else.
+        { property: 'og:image', content: 'https://khodrobin.noxioai.com/og.png' },
+        { property: 'og:image:width', content: '1200' },
+        { property: 'og:image:height', content: '630' },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:locale', content: 'fa_IR' },
+        { name: 'twitter:card', content: 'summary_large_image' },
+        { name: 'theme-color', content: '#07080b' },
         {
           name: 'description',
           content: 'جست‌وجوی خودروی دست‌دوم در دیوار، باما و همراه‌مکانیک. یک خودرو، همه‌ی آگهی‌ها، یک قیمت میانه.',
@@ -32,6 +41,11 @@ export default defineNuxtConfig({
           rel: 'preload', as: 'font', type: 'font/woff2',
           href: '/fonts/Vazirmatn.woff2', crossorigin: '',
         },
+        // An SVG favicon so the mark stays sharp on every display and can flip
+        // its ink under a light tab strip; the PNG is what iOS uses, because it
+        // masks the corners itself and ignores transparency.
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
       ],
     },
   },

@@ -9,7 +9,7 @@ const year = 1405
     <div class="mx-auto grid max-w-[1080px] gap-8 px-5 py-12 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div class="mb-2 flex items-center gap-2 font-black">
-          <span class="size-2 rounded-full bg-accent" />خودروبین
+          <BrandMark :size="22" class="shrink-0 text-ink" />خودروبین
         </div>
         <p class="text-[.82rem] leading-7 text-ink-3">
           آگهی‌های خودروی دست‌دوم را از چهار منبع کنار هم می‌گذاریم تا قیمت واقعی بازار را ببینی.

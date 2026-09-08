@@ -22,7 +22,7 @@ const links = [
     >
       <div class="mx-auto flex h-[62px] max-w-[1080px] items-center gap-3 px-5">
         <NuxtLink to="/" class="flex shrink-0 items-center gap-2.5 text-[1.06rem] font-black tracking-tight">
-          <span class="ping size-2.5 rounded-full bg-accent" />
+          <BrandMark :size="26" class="shrink-0 text-ink" />
           خودروبین
         </NuxtLink>
 
@@ -95,6 +95,4 @@ const links = [
 </template>
 
 <style scoped>
-.ping { box-shadow: 0 0 0 4px rgba(255,46,77,.12); animation: ping 2.6s var(--ease-out-quint) infinite; }
-@keyframes ping { 0%,100% { box-shadow: 0 0 0 4px rgba(255,46,77,.12) } 50% { box-shadow: 0 0 0 9px transparent } }
 </style>
