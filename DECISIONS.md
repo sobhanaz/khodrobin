@@ -358,3 +358,105 @@ A link the reviewer cannot open is not a partial failure. It looks identical to 
 **Trade-off accepted.** It is coarse — a comment change invalidates 149 explanations and costs ~25 minutes of background regeneration inside a 1800s budget. That is the cheap resource in this architecture, and the precise alternative (re-validating each cached text) needs the guard inside the crawler image, which builds from `services/crawler/` alone. Wrong resource to optimise.
 
 **The general form.** *A safety mechanism that depends on someone remembering is documentation, not a mechanism.* The failure mode is silence — it never errors, it just quietly stops being true.
+
+---
+
+## ۲۱. رضایت را کلیک تأیید ثابت می‌کند، نه تیک فرم — consent is proven by the verification click
+
+**Context.** The owner asked for a marketing list. The register page promised «هیچ ایمیل تبلیغاتی‌ای نمی‌فرستیم», so the feature arrived as an unchecked opt-in box with double opt-in for the newsletter — one mechanism, honestly labelled.
+
+**What was wrong anyway.** The tick was acted on immediately after the account row was written, before any verification click. So registering with a stranger's address and the box ticked put that address into the mailable export, marked confirmed. Sharper: the upsert **upgraded a pending double opt-in somebody else had genuinely started**, confirming it on their behalf.
+
+**Why it survived review.** It had a passing test defending it. `TestRegisteringWithTheBoxTickedJoinsTheList` asserted that registration puts the address on the list immediately — the vulnerability, encoded as the specification. Rewriting the test was the fix; making it pass would have been the bug.
+
+**Choice.** Consent is honoured in `verifyUser` and nowhere earlier. The secret that authorises unsubscribing is returned from that call and carried out in the welcome mail — the previous version generated one, hashed it into the row, and let it fall out of scope, leaving those addresses mailable with no token in existence that could remove them.
+
+**Trade-off accepted.** Someone who ticks the box and never verifies is on no list, even though they asked to be. That is the right direction to be wrong in: the alternative sends mail to people who never proved they own the mailbox.
+
+**The general form.** *A form field is a claim; verification is evidence.* Anyone can type anyone's address into a signup form, which is the entire reason verification exists — so any consent acted on before it is consent from an unknown party.
+
+---
+
+## ۲۲. سیاست رمز، جایی که رمز ساخته می‌شود — enforce the password policy where passwords are set, never at login
+
+**Context.** The owner asked for a live checklist: ten characters, a symbol, a capital.
+
+**What was actually true.** The browser checked all three. The Go service checked length. `usePasswordRules.ts` carried a comment claiming "the Go service enforces it independently on two endpoints" — it did not, and anything posting straight at the API got one rule out of three.
+
+**Choice.** `passwordProblem()` enforces all three server-side on register and reset, in runes, using `unicode.IsUpper` and "not a letter, digit or space" so the two sides cannot disagree at the moment of submit. It names which rule failed, because guessing at an invisible rule is how people abandon a signup.
+
+**And deliberately not at login.** `validPassword` stays length-only. Every account created before this policy satisfies neither new rule, the first admin account among them, and gating login would lock out the people who have been here longest — with no route back, because fixing it requires logging in. The login page shows the checklist as information and never blocks submit.
+
+**Trade-off accepted.** Two functions with similar names doing deliberately different things, which invites someone to "unify" them later. The comment on each says why, and a test asserts the asymmetry directly.
+
+**A consequence worth recording.** Persian script has no uppercase letters, so the field's own hint — «یک عبارت فارسی طولانی» — became advice the validator would refuse. Guidance and rules have to change together or the page argues with itself.
+
+---
+
+## ۲۳. صفحه‌ی معرفی از صفحه‌ی جست‌وجو جدا شد — the landing page is not the search page
+
+**Context.** `/` was a hero, a search box, and a results grid at once. It served neither job: a first-time visitor got no explanation, and someone searching scrolled past marketing to reach results.
+
+**Choice.** `/` is the landing page. `/search` is the application. The landing search box submits to `/search?q=…`, which renders server-side.
+
+**What this fixed by accident.** The old `/` never read `?q=` at all, so every shared search link arrived blank. Splitting the pages forced the query parameter to become real routing state, and a link now arrives with results in the HTML.
+
+**Trade-off accepted.** One more navigation step between landing and first result. Worth it: the landing page is what a reviewer opens, and it now has room to make the argument.
+
+---
+
+## ۲۴. نشانی آگهی از فرایند بیرون نمی‌رود — the pasted URL never leaves the process
+
+**Context.** `POST /api/v1/lookup` runs the product backwards: paste a listing URL from any of the five marketplaces and get every offer for the same spec, with an overpay verdict. It is the direction Torob names as their hardest problem and nobody demos — listing → the same car everywhere, rather than search → results.
+
+**Choice.** The URL is parsed to a source and an id and answered from the in-memory index. Nothing fetches the pasted page.
+
+**Why that matters more than it looks.** An endpoint that fetched the URL would be a request surface a caller could point at anything — internal addresses included — and would make the feature depend on the source site being up. Parsing instead of fetching removes both at once.
+
+**And POST rather than GET.** A listing URL in a query string lands in access logs and referrer headers. It belongs to somebody's advertisement; the body keeps it out of both.
+
+**Trade-off accepted.** A URL for a listing the crawler has not yet seen returns "not in the index" rather than going to look. That is honest about what this product knows, and the alternative is a fetcher pointed at user input.
+
+---
+
+## ۲۵. سندی که نباید کش شود، دارایی‌ای که باید — the document must not be cached, the assets must
+
+**Context.** The owner reported not seeing changes that had been live for forty-three minutes. Every container was running the right image and the server was serving the new HTML correctly the whole time.
+
+**Why.** Nuxt marks its hashed bundles `immutable` for a year, which is right: the filename changes when the contents do. The HTML document carried **no `Cache-Control` header at all**, so browsers fell back to heuristic caching and kept serving the previous document — which references the previous bundle filenames, and those really are cached for a year. One missing header on one response could pin a visitor to an entire old version of the site indefinitely.
+
+**Choice.** The document is `no-cache`, which means revalidate before use rather than do not store, so a repeat visit stays cheap and can never be stale. Hashed assets, fonts and brand images keep their immutable year.
+
+**Trade-off accepted.** One conditional request per navigation. Nothing, against the alternative.
+
+**The general form.** *Two individually-correct decisions can be wrong together.* Immutable assets are correct; an SSR document with no cache header is an omission rather than an obvious error. Combined they are self-reinforcing, because stale HTML pins you to stale assets and nothing revalidates to break the loop. It also cannot be found with `curl`, which always fetches fresh — only a real browser, over time, exhibits it.
+
+---
+
+## ۲۶. قانونی که فقط جایی اجرا می‌شود که داده تمیز است — a check that only runs where the data was already clean
+
+**Context.** «فروش اقساطی» is an instalment sale: the number in the listing is a down payment, not the price of a car. Bama declares this in a **field**, and `normalize.py` has dropped those since the first crawl.
+
+**What nobody checked.** Divar declares it only in the free-text title. Nothing looked. Measured against the live index: **76 such listings, and 49 were the cheapest offer on their card** — leading the result and being handed to the model as the choice to justify. Each one is a fake bargain with a real percentage attached.
+
+**Choice.** A title-based flag beside the existing field-based one, flagged rather than deleted like every other contradiction here, so the listing stays visible and stops setting the price.
+
+**The general form, and it is the reason this entry exists.** The rule was enforced on the source that reports cleanly and skipped on the source that does not. *A validation applied only where the data is already well-formed is a validation that never runs where it is needed.* Compare ۱۴, where a fourth source changed nothing because its gearbox lived somewhere unexpected — the same shape, one layer down.
+
+---
+
+## ۲۷. توضیحی که چیزی را تضمین نمی‌کند — the comment that asserts a check nobody performs
+
+This is not a decision so much as a pattern that has now appeared **five times**, each found only by looking at the result rather than the source.
+
+| Where | The comment said | The code did |
+|---|---|---|
+| `plausibility` | outliers are flagged so they cannot mislead | flagged them, and still sorted them first (۱۸) |
+| `PROMPT_VERSION` | bump when the prompt changes | sat at `"1"` through a dozen changes (۲۰) |
+| warm cache carry-forward | keeps what is "already known and still valid" | checked nothing; 37 entries were immortal |
+| `admin.vue` | the figure comes from the same query that writes the CSV | read `counts.mailable`, a key the API never emitted |
+| `usePasswordRules.ts` | the Go service enforces these independently | it enforced length (۲۲) |
+
+None of them errored. All of them read as true. Every one was written in good faith by someone describing what they intended.
+
+**The general form.** *A comment is a claim that nothing verifies.* It stays true-sounding long after the code stops honouring it, and it is worse than no comment because it stops the next reader from checking. Where a comment asserts a guarantee, the guarantee needs a test — and where the guarantee is about the running system rather than a function, the test has to look at what a user actually receives.
