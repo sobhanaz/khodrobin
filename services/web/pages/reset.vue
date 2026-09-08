@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'انتخاب رمز تازه — خودروبین', robots: 'noindex' })
+useSeoMeta({ title: 'انتخاب رمز تازه در خودروبین', robots: 'noindex' })
 
 const route = useRoute()
 const token = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''))
@@ -10,14 +10,19 @@ const pending = ref(false)
 const error = ref<string | null>(null)
 const done = ref(false)
 
-const passLen = computed(() => [...password.value].length)
-const passError = computed(() =>
-  touched.value && passLen.value > 0 && passLen.value < 10
-    ? `${10 - passLen.value} نویسه‌ی دیگر لازم است.` : null)
+// This screen sets a password, so it enforces the same three rules register
+// does. A policy applied on one of the two screens that set a password is not a
+// policy, it is a suggestion with a gap in it.
+const { satisfied } = usePasswordRules(password)
+
+const passError = computed(() => {
+  if (!touched.value || satisfied.value) return null
+  return password.value.length === 0 ? 'رمز تازه لازم است.' : 'هنوز همه‌ی شرط‌های زیر را ندارد.'
+})
 
 async function submit() {
   touched.value = true
-  if (passLen.value < 10 || !token.value) return
+  if (!satisfied.value || !token.value) return
   pending.value = true; error.value = null
   try {
     await $fetch(apiUrl('/api/auth/reset'), {
@@ -48,7 +53,7 @@ async function submit() {
       <div class="font-bold text-good">رمز عوض شد</div>
       <!-- Every other session was revoked server-side. If the reset happened
            because someone else had access, leaving their session alive would
-           defeat the whole point — so the page says so rather than hiding it. -->
+           defeat the whole point, so the page says so rather than hiding it. -->
       <p class="mt-2 text-[.88rem] leading-8 text-ink-2">
         همه‌ی نشست‌های قبلی بسته شدند. با رمز تازه وارد شو.
       </p>
@@ -58,26 +63,22 @@ async function submit() {
     </div>
 
     <form v-else class="grid gap-4" novalidate @submit.prevent="submit">
-      <PasswordField
-        id="rs-pass"
-        v-model="password"
-        label="رمز تازه"
-        autocomplete="new-password"
-        :error="passError"
-        hint="حداقل ۱۰ نویسه. با دکمه‌ی چشم می‌توانی ببینی چه نوشته‌ای."
-      />
-
-      <div class="-mt-1 flex items-center gap-2" aria-hidden="true">
-        <span class="h-1 flex-1 overflow-hidden rounded-full bg-surface-2">
-          <span
-            class="block h-full rounded-full transition-all duration-300"
-            :class="passLen >= 10 ? 'bg-good' : 'bg-warn'"
-            :style="{ width: `${Math.min(100, passLen * 10)}%` }"
-          />
-        </span>
-        <span class="font-mono text-[.7rem]" :class="passLen >= 10 ? 'text-good' : 'text-ink-3'" dir="ltr">
-          {{ passLen >= 10 ? '✓' : `${passLen}/10` }}
-        </span>
+      <!-- focusout, not blur: the listener lands on the component's root element
+           and blur does not bubble to it. -->
+      <div @focusout="touched = true">
+        <PasswordField
+          id="rs-pass"
+          v-model="password"
+          label="رمز تازه"
+          autocomplete="new-password"
+          :error="passError"
+          hint="یک عبارت فارسی طولانی بنویس، بعد یک حرف بزرگ لاتین و یک نماد هم به آن اضافه کن."
+        />
+        <!-- The live checklist replaces the old length bar. Two widgets stating
+             one policy is one widget too many, and the bar only knew about the
+             length rule, so it could show a full green track on a password the
+             server would refuse. -->
+        <PasswordRules :password="password" />
       </div>
 
       <div
@@ -91,10 +92,10 @@ async function submit() {
 
       <button
         type="submit"
-        :disabled="passLen < 10 || pending"
+        :disabled="pending"
         class="min-h-[48px] rounded-xl bg-accent px-5 font-bold text-white transition
                enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50
-               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >{{ pending ? 'در حال تغییر…' : 'تغییر رمز' }}</button>
     </form>
   </AuthShell>

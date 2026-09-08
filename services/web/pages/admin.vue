@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
 
-useSeoMeta({ title: 'مدیریت — خودروبین', robots: 'noindex, nofollow' })
+useSeoMeta({ title: 'مدیریت - خودروبین', robots: 'noindex, nofollow' })
 
 const { user, call, init, isLoggedIn } = useAuth()
 const f = useFormat()
@@ -16,6 +16,15 @@ interface AdminSummary {
     subscribers: number
     subscribers_confirmed: number
     marketing_optin: number
+    /**
+     * The one list, counted by the one query that also writes the CSV.
+     *
+     * It used to be added up in the browser as confirmed + opted-in, which is a
+     * different set from the one the export selects: two numbers wearing the
+     * same label, and whichever the operator read last was the one they sized a
+     * campaign against. Optional here only so an older API answers with «-»
+     * instead of a figure this page invented.
+     */
   }
   mail: { configured: boolean }
 }
@@ -102,10 +111,10 @@ onMounted(async () => {
 })
 
 const date = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short' })
-const on = (iso: string | null) => (iso ? date.format(new Date(iso)) : '—')
+const on = (iso: string | null) => (iso ? date.format(new Date(iso)) : '-')
 
 const yn = (v: boolean) =>
-  v ? 'border-good/30 bg-good/[.12] text-good' : 'border-white/[.1] bg-white/[.03] text-ink-3'
+  v ? 'border-good/30 bg-good/[.12] text-good' : 'border-white/[.1] bg-white/[.03] text-ink-2'
 
 /**
  * Order matters. Someone who confirmed and then left is «لغو کرده», never
@@ -113,7 +122,7 @@ const yn = (v: boolean) =>
  * healthy address and gets mailed anyway.
  */
 function subState(s: Subscriber) {
-  if (s.unsubscribed_at) return { label: 'لغو کرده', cls: 'border-white/[.14] bg-white/[.04] text-ink-3' }
+  if (s.unsubscribed_at) return { label: 'لغو کرده', cls: 'border-white/[.14] bg-white/[.04] text-ink-2' }
   if (s.confirmed_at) return { label: 'تأییدشده', cls: 'border-good/30 bg-good/[.12] text-good' }
   return { label: 'در انتظار تأیید', cls: 'border-warn/30 bg-warn/[.12] text-warn' }
 }
@@ -121,34 +130,34 @@ function subState(s: Subscriber) {
 // Every address we hold, against the subset that gave us permission. A
 // dashboard that shows only the first number flatters the owner into mailing
 // people who never asked.
+//
+// captured sums two tables and so counts anyone in both of them twice; that is
+// stated under the sentence. It is deliberately not subtracted from `mailable`
+// to produce a third figure — an over-count minus a clean count is a number
+// this page could not stand behind, and it read as precise.
 const captured = computed(() => {
   const c = summary.value?.counts
   return c ? c.users + c.subscribers : null
 })
-const mailable = computed(() => {
-  const c = summary.value?.counts
-  return c ? c.subscribers_confirmed + c.marketing_optin : null
-})
-const gap = computed(() =>
-  captured.value === null || mailable.value === null ? null : captured.value - mailable.value)
+// subscribers_confirmed, not a `mailable` key: the API has never emitted one.
+// Because the field was declared optional it type-checked, `?? null` rendered
+// «-», and the operator's single most important number was a permanent dash
+// under a comment asserting it came from the same query that writes the CSV.
+// Now it is the count that query actually returns.
+const mailable = computed(() => summary.value?.counts.subscribers_confirmed ?? null)
 
 const exporting = ref(false)
 const exportError = ref<string | null>(null)
-const exportedRows = ref<number | null>(null)
+const exported = ref(false)
 
 async function exportCsv() {
   exporting.value = true
   exportError.value = null
+  exported.value = false
   try {
     // The CSV route sits behind admin auth like everything else here, so a bare
     // <a href> arrives with no bearer token and 404s exactly like a non-admin.
     const blob = await call<Blob>('/api/auth/admin/subscribers.csv', { responseType: 'blob' })
-    const text = await blob.text()
-    // The file that just left the building is the one mailable count nobody had
-    // to derive: the summary's confirmed figure says nothing about who has since
-    // unsubscribed, and only the export applies both rules at once.
-    exportedRows.value = Math.max(0, text.trim().split('\n').length - 1)
-
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -161,6 +170,7 @@ async function exportCsv() {
     a.click()
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 0)
+    exported.value = true
   } catch {
     exportError.value = 'خروجی گرفته نشد.'
   } finally {
@@ -178,6 +188,11 @@ const freshness = computed(() => {
   return { text: `${f.fa(Math.round(mins / 60))} ساعت پیش`, stale }
 })
 
+// Focus is the lavender token, never the accent. Red is a verdict on a value;
+// a control that is merely selected has not been judged.
+const ring = 'outline-none focus-visible:outline focus-visible:outline-2 ' +
+  'focus-visible:outline-offset-2 focus-visible:outline-focus'
+
 const dedupRate = computed(() => {
   const s = stats.value?.stats as any
   if (!s?.listings_captured) return null
@@ -187,24 +202,24 @@ const dedupRate = computed(() => {
 
 <template>
   <main class="mx-auto max-w-[980px] px-5 py-14">
-    <h1 class="text-[1.6rem] font-black tracking-tight">مدیریت</h1>
+    <h1 class="text-[1.6rem] font-black">مدیریت</h1>
 
-    <p v-if="loading" class="mt-6 text-ink-3">در حال بارگذاری…</p>
+    <p v-if="loading" class="mt-6 text-ink-2">در حال بارگذاری…</p>
 
     <div v-else-if="denied" class="mt-6 rounded-2xl border border-white/[.07] bg-surface p-8 text-center">
       <div class="font-bold">دسترسی نداری</div>
       <p class="mt-2 text-[.88rem] text-ink-2">این صفحه فقط برای حساب مدیر است.</p>
-      <NuxtLink to="/" class="mt-4 inline-block text-[.85rem] text-accent hover:underline">بازگشت</NuxtLink>
+      <NuxtLink to="/" :class="`mt-4 inline-flex min-h-11 items-center text-[.85rem] text-accent hover:underline ${ring}`">بازگشت</NuxtLink>
     </div>
 
     <template v-else>
-      <p class="mt-2 font-mono text-[.85rem] text-ink-3" dir="ltr">{{ user?.email }}</p>
+      <p class="mt-2 font-mono text-[.85rem] text-ink-2" dir="ltr">{{ user?.email }}</p>
 
       <!-- Pipeline health first. These are the numbers that say whether the
            product is telling the truth right now; account counts are trivia by
            comparison. -->
       <section class="mt-8">
-        <h2 class="mb-3 text-[.8rem] font-mono uppercase tracking-wider text-ink-3">سلامت داده</h2>
+        <h2 class="mb-3 text-cap font-bold text-ink-2">سلامت داده</h2>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div
             class="rounded-2xl border p-5"
@@ -212,41 +227,41 @@ const dedupRate = computed(() => {
               ? 'border-warn/30 bg-warn/[.12]'
               : 'border-white/[.07] bg-surface'"
           >
-            <div class="text-[.75rem] text-ink-3">آخرین بازسازی ایندکس</div>
+            <div class="text-[.75rem] text-ink-2">آخرین بازسازی ایندکس</div>
             <div class="mt-1 text-[1.15rem] font-bold" :class="freshness?.stale ? 'text-warn' : 'text-ink'">
-              {{ freshness?.text ?? '—' }}
+              {{ freshness?.text ?? '-' }}
             </div>
-            <div class="mt-1 text-[.72rem] text-ink-3">
+            <div class="mt-1 text-[.72rem] text-ink-2">
               {{ freshness?.stale ? 'دو چرخه‌ی خزش جا افتاده' : 'در بازه‌ی عادی' }}
             </div>
           </div>
 
           <div class="rounded-2xl border border-white/[.07] bg-surface p-5">
-            <div class="text-[.75rem] text-ink-3">آگهی‌های یکتا</div>
+            <div class="text-[.75rem] text-ink-2">آگهی‌های یکتا</div>
             <div class="mt-1 font-mono text-[1.15rem] font-bold" dir="ltr">
-              {{ stats ? f.money(stats.stats.indexed) : '—' }}
+              {{ stats ? f.money(stats.stats.indexed) : '-' }}
             </div>
-            <div v-if="dedupRate !== null" class="mt-1 text-[.72rem] text-ink-3">
+            <div v-if="dedupRate !== null" class="mt-1 text-[.72rem] text-ink-2">
               {{ f.fa(dedupRate) }}٪ تکراری حذف شد
             </div>
           </div>
 
           <div class="rounded-2xl border border-white/[.07] bg-surface p-5">
-            <div class="text-[.75rem] text-ink-3">خودروها</div>
+            <div class="text-[.75rem] text-ink-2">خودروها</div>
             <div class="mt-1 font-mono text-[1.15rem] font-bold" dir="ltr">
-              {{ stats ? f.money(stats.stats.specs) : '—' }}
+              {{ stats ? f.money(stats.stats.specs) : '-' }}
             </div>
-            <div class="mt-1 text-[.72rem] text-ink-3">
-              {{ stats ? f.fa(stats.stats.multi_source_specs) : '—' }} چندمنبعی
+            <div class="mt-1 text-[.72rem] text-ink-2">
+              {{ stats ? f.fa(stats.stats.multi_source_specs) : '-' }} چندمنبعی
             </div>
           </div>
 
           <div class="rounded-2xl border border-white/[.07] bg-surface p-5">
-            <div class="text-[.75rem] text-ink-3">آگهی‌های پرچم‌خورده</div>
+            <div class="text-[.75rem] text-ink-2">آگهی‌های پرچم‌خورده</div>
             <div class="mt-1 font-mono text-[1.15rem] font-bold text-warn" dir="ltr">
-              {{ stats ? f.money(stats.stats.flagged_offers) : '—' }}
+              {{ stats ? f.money(stats.stats.flagged_offers) : '-' }}
             </div>
-            <div class="mt-1 text-[.72rem] text-ink-3">تناقض داخلی داده</div>
+            <div class="mt-1 text-[.72rem] text-ink-2">تناقض داخلی داده</div>
           </div>
         </div>
 
@@ -256,13 +271,17 @@ const dedupRate = computed(() => {
             :key="s"
             class="rounded-full border border-good/30 bg-good/[.12] px-3 py-1 font-mono text-[.72rem] text-good"
           >{{ s }}</span>
-          <button type="button" class="rounded-full border border-white/[.12] px-3 py-1 text-[.72rem] text-ink-3 hover:text-ink"
-                  @click="refreshStats()">به‌روزرسانی</button>
+          <button
+            type="button"
+            :class="`inline-flex min-h-11 items-center rounded-full border border-white/[.12] px-4
+                     text-[.75rem] text-ink-2 transition hover:text-ink ${ring}`"
+            @click="refreshStats()"
+          >به‌روزرسانی</button>
         </div>
       </section>
 
       <section class="mt-10">
-        <h2 class="mb-3 text-[.8rem] font-mono uppercase tracking-wider text-ink-3">حساب‌ها</h2>
+        <h2 class="mb-3 text-cap font-bold text-ink-2">حساب‌ها</h2>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div v-for="c in [
             { l: 'کاربران', v: summary?.counts.users },
@@ -274,14 +293,14 @@ const dedupRate = computed(() => {
             { l: 'مشترک تأییدشده', v: summary?.counts.subscribers_confirmed },
             { l: 'رضایت بازاریابی کاربران', v: summary?.counts.marketing_optin },
           ]" :key="c.l" class="rounded-2xl border border-white/[.07] bg-surface p-5">
-            <div class="text-[.75rem] text-ink-3">{{ c.l }}</div>
-            <div class="mt-1 text-[1.15rem] font-bold">{{ c.v == null ? '—' : f.fa(c.v) }}</div>
+            <div class="text-[.75rem] text-ink-2">{{ c.l }}</div>
+            <div class="mt-1 text-[1.15rem] font-bold">{{ c.v == null ? '-' : f.fa(c.v) }}</div>
           </div>
         </div>
       </section>
 
       <section class="mt-10">
-        <h2 class="mb-3 text-[.8rem] font-mono uppercase tracking-wider text-ink-3">کاربران</h2>
+        <h2 class="mb-3 text-cap font-bold text-ink-2">کاربران</h2>
         <AdminTable
           :cols="['ایمیل', 'نام', 'تأیید', 'مدیر', 'رضایت بازاریابی', 'ثبت‌نام', 'آخرین ورود']"
           :rows="users.rows" :total="users.total" :offset="users.offset" :limit="users.limit"
@@ -291,13 +310,13 @@ const dedupRate = computed(() => {
           <template #row="{ row }">
             <tr class="border-b border-white/[.04] last:border-0">
               <td class="whitespace-nowrap px-4 py-3 font-mono text-[.78rem]" dir="ltr">{{ row.email }}</td>
-              <td class="px-4 py-3">{{ row.display_name || '—' }}</td>
+              <td class="px-4 py-3">{{ row.display_name || '-' }}</td>
               <td class="px-4 py-3">
                 <span class="rounded-full border px-2.5 py-1 text-[.72rem]" :class="yn(row.verified)">
                   {{ row.verified ? 'بله' : 'خیر' }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-ink-3">{{ row.is_admin ? 'مدیر' : '—' }}</td>
+              <td class="px-4 py-3 text-ink-2">{{ row.is_admin ? 'مدیر' : '-' }}</td>
               <!-- Spelled out rather than a tick, because a blank cell reads as
                    "no data" and this column is a legal record of a yes or a no. -->
               <td class="px-4 py-3">
@@ -313,40 +332,46 @@ const dedupRate = computed(() => {
       </section>
 
       <section class="mt-10">
-        <h2 class="mb-3 text-[.8rem] font-mono uppercase tracking-wider text-ink-3">فهرست ایمیل</h2>
+        <h2 class="mb-3 text-cap font-bold text-ink-2">فهرست ایمیل</h2>
 
-        <!-- The one sentence the owner needs. Two count cards side by side let
-             someone read the bigger one and plan a campaign for it; the gap has
-             to be stated, not left as arithmetic between two tiles. -->
+        <!-- The one sentence the owner needs, and one number inside it.
+             The permitted figure comes from the same query that writes the CSV,
+             so the sentence and the file can never disagree; nothing here is
+             added up or subtracted in the browser. -->
         <div class="glass rounded-2xl border border-white/[.07] p-5 sm:p-6">
           <p class="text-[.95rem] leading-8">
-            از <b>{{ captured == null ? '—' : f.fa(captured) }}</b> نشانی‌ای که داریم،
-            تنها <b class="text-good">{{ mailable == null ? '—' : f.fa(mailable) }}</b> نشانی
-            اجازه‌ی ایمیل تبلیغاتی داده است.
+            از <b>{{ captured == null ? '-' : f.fa(captured) }}</b> نشانی‌ای که داریم،
+            تنها <b class="text-good">{{ mailable == null ? '-' : f.fa(mailable) }}</b> نشانی
+            اجازه‌ی ایمیل تبلیغاتی داده است. خروجی CSV دقیقاً همین فهرست است.
           </p>
           <p class="mt-2 text-[.82rem] leading-7 text-ink-2">
-            <b>{{ gap == null ? '—' : f.fa(gap) }}</b> نشانی قابل ارسال نیست: یا تأیید دومرحله‌ای را
-            کامل نکرده، یا لغو اشتراک کرده، یا هنگام ثبت‌نام تیک بازاریابی را نزده است.
-            ارسال به این گروه، دامنه را به فهرست سیاه می‌برد.
+            بقیه یا هنگام ثبت‌نام تیک بازاریابی را نزده‌اند، یا تأیید دومرحله‌ای خبرنامه را
+            کامل نکرده‌اند، یا از خبرنامه لغو اشتراک کرده‌اند. ارسال به این گروه، دامنه را
+            به فهرست سیاه می‌برد.
           </p>
-          <p class="mt-2 text-[.75rem] leading-6 text-ink-3">
-            کاربران و مشترکان دو جدول جدا هستند؛ اگر کسی در هر دو باشد، در این دو عدد دو بار شمرده می‌شود.
+          <p class="mt-2 text-[.78rem] leading-6 text-ink-2">
+            کاربران و مشترکان دو جدول جدا هستند؛ کسی که در هر دو باشد در عدد کل دو بار شمرده
+            می‌شود، پس تفاضل این دو عدد رقم دقیقی نیست.
           </p>
         </div>
 
         <div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
           <button
             type="button" :disabled="exporting"
-            class="rounded-full border border-good/30 bg-good/[.12] px-4 py-2 text-[.85rem] text-good transition hover:bg-good/[.2] disabled:opacity-40"
+            :class="`inline-flex min-h-11 items-center rounded-full border border-good/30 bg-good/[.12] px-4
+                     text-[.85rem] text-good transition hover:bg-good/[.2] disabled:opacity-40 ${ring}`"
             @click="exportCsv()"
           >{{ exporting ? 'در حال آماده‌سازی…' : 'خروجی CSV فهرست قابل ارسال' }}</button>
-          <span class="text-[.76rem] leading-6 text-ink-3">
-            فقط نشانی‌های تأییدشده‌ای که لغو اشتراک نکرده‌اند — نه در انتظارها، نه لغوکرده‌ها.
+          <span class="text-[.78rem] leading-6 text-ink-2">
+            همان فهرستی که عدد بالا می‌گوید.
           </span>
         </div>
-        <p v-if="exportError" class="mt-2 text-[.8rem] text-accent">{{ exportError }}</p>
-        <p v-else-if="exportedRows !== null" class="mt-2 text-[.8rem] text-good">
-          {{ f.fa(exportedRows) }} نشانی در فایل خروجی بود.
+        <p v-if="exportError" role="alert" class="mt-2 text-[.8rem] text-accent">{{ exportError }}</p>
+        <!-- No row count. It was derived by splitting the file on newline, which
+             over-reports the moment a quoted cell contains one, and it was a
+             second number for the list the sentence above already states. -->
+        <p v-else-if="exported" role="status" class="mt-2 text-[.8rem] text-good">
+          فایل خروجی ساخته شد.
         </p>
 
         <div class="mt-5">
@@ -368,7 +393,7 @@ const dedupRate = computed(() => {
                 <td class="whitespace-nowrap px-4 py-3" :class="row.unsubscribed_at ? 'text-warn' : 'text-ink-2'">
                   {{ on(row.unsubscribed_at) }}
                 </td>
-                <td class="px-4 py-3 font-mono text-[.76rem] text-ink-3" dir="ltr">{{ row.source || '—' }}</td>
+                <td class="px-4 py-3 font-mono text-[.76rem] text-ink-2" dir="ltr">{{ row.source || '-' }}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-ink-2">{{ on(row.created_at) }}</td>
               </tr>
             </template>
@@ -377,7 +402,7 @@ const dedupRate = computed(() => {
       </section>
 
       <section class="mt-10">
-        <h2 class="mb-3 text-[.8rem] font-mono uppercase tracking-wider text-ink-3">سرویس‌ها</h2>
+        <h2 class="mb-3 text-cap font-bold text-ink-2">سرویس‌ها</h2>
         <div class="grid gap-3 sm:grid-cols-2">
           <div class="flex items-center justify-between rounded-2xl border border-white/[.07] bg-surface p-5">
             <span class="text-[.9rem]">ارسال ایمیل</span>
@@ -390,10 +415,10 @@ const dedupRate = computed(() => {
           </div>
           <a
             href="/readyz" target="_blank" rel="noopener"
-            class="flex items-center justify-between rounded-2xl border border-white/[.07] bg-surface p-5 hover:border-white/[.12]"
+            :class="`flex items-center justify-between rounded-2xl border border-white/[.07] bg-surface p-5 hover:border-white/[.12] ${ring}`"
           >
             <span class="text-[.9rem]">بررسی آمادگی سرویس جست‌وجو</span>
-            <span class="font-mono text-[.74rem] text-ink-3" dir="ltr">/readyz ↗</span>
+            <span class="font-mono text-[.74rem] text-ink-2" dir="ltr">/readyz ↗</span>
           </a>
         </div>
       </section>

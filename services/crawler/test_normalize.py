@@ -69,8 +69,10 @@ def test_khodro45_turbo_variant_still_reads_as_automatic():
 
 
 def test_every_source_yields_an_image_url():
-    # A car listing without a photo is a worse product, and all four sources
-    # publish one. Dropping them was an oversight, so this pins it down.
+    # A car listing without a photo is a worse product, and every source
+    # publishes one. Dropping them was an oversight, so this pins it down.
+    # Sheypoor is covered separately below: its `image` is a list of
+    # ImageObject rather than a URL string, which is its own way to fail.
     divar = n.from_divar({"name": "x", "image": "https://s100.divarcdn.com/a.webp",
                           "offers": {"price": "3100000000"}, "productionDate": "1385"})
     bama = n.from_bama({"detail": {"title": "x", "image": "https://cdn-sth1.bama.ir/b.jpg", "year": "1385"},
@@ -253,3 +255,74 @@ def test_sheypoor_city_comes_from_the_page_not_the_ad():
         {"name": "تهران", "item": "https://www.sheypoor.com/s/tehran"},
     ]}]
     assert sheypoor._city_fa(tehran, "tehran") == "تهران"
+
+
+def test_sheypoor_price_unit_belongs_to_the_source_not_to_the_number():
+    """The 10x question, settled against the market rather than the label.
+
+    A Lamari Eco quoted at 44,000,000,000 on Sheypoor is 4.4 billion tomans,
+    which is what a new one costs; read as tomans it is a 44-billion-toman
+    family sedan. The same figure arriving from Bama means the other thing, and
+    nothing in either payload says so — Sheypoor writes ``priceCurrency: IRR``
+    and Bama writes no currency at all. The unit is a property of the source.
+
+    Held up against the rest of the shipped seed: 65 spec clusters carry both a
+    Sheypoor offer and an offer from another source, and the median
+    Sheypoor/other price ratio across them is 1.03. Read as tomans it is 10.3.
+    """
+    sheypoor = n.from_sheypoor({
+        "name": "لاماری اکو خشک", "brand": {"name": "لاماری"},
+        "vehicleModelDate": "1404", "vehicleTransmission": "اتوماتیک",
+        "mileageFromOdometer": {"value": "600"},
+        "offers": {"priceCurrency": "IRR", "Price": 44_000_000_000, "sku": 8},
+    })
+    bama = n.from_bama({
+        "detail": {"title": "لاماری اکو", "year": "1404", "mileage": "600"},
+        "price": {"price": 44_000_000_000},
+    })
+    assert sheypoor["price_toman"] == 4_400_000_000
+    assert bama["price_toman"] == 44_000_000_000
+    assert bama["price_toman"] == 10 * sheypoor["price_toman"]
+
+
+def test_sheypoor_year_systems_both_reach_the_same_spec_key():
+    """846 Jalali to 108 Gregorian in one 960-ad crawl, in the same field.
+
+    The Gregorian ones are the imports — Tucson, Land Cruiser, Megane — and
+    they are exactly the listings that need to cluster with a domestic feed's
+    Jalali row for the same car. Convert one path and not the other and an
+    imported Tucson gets its own private cluster with a median of one.
+    """
+    from extract import resolve, spec_key
+    payload = {
+        "name": "توسان 2013 دودیفرانسیل 2400cc", "brand": {"name": "هیوندای"},
+        "vehicleTransmission": "اتوماتیک",
+        "mileageFromOdometer": {"value": "226000"},
+        "offers": {"Price": 47_000_000_000, "sku": 9},
+    }
+    imported = n.from_sheypoor(payload | {"vehicleModelDate": "2013"})
+    domestic = n.from_sheypoor(payload | {"vehicleModelDate": "1392"})
+    assert (imported["year_jalali"], imported["year_gregorian"]) == (1392, 2013)
+    assert (domestic["year_jalali"], domestic["year_gregorian"]) == (1392, 2013)
+    key = spec_key(imported, resolve(imported))
+    assert key == "hyundai/tucson/base/at/1392/9"
+    assert key == spec_key(domestic, resolve(domestic))
+
+
+def test_sheypoor_gearbox_is_its_own_field_not_a_trim():
+    """Where Khodro45 hid the gearbox in the trim, Sheypoor states it.
+
+    Worth an assertion anyway, because the failure is silent: a source whose
+    gearbox never parses keys every spec on ``na`` and forms a parallel
+    universe that no other source's cluster can ever join. Across the 422
+    indexed rows of the shipped crawl the split is 324 mt, 97 at, 1 na.
+    """
+    from extract import resolve, spec_key
+    for stated, expected in (("اتوماتیک", "at"), ("دنده‌ای", "mt")):
+        car = n.from_sheypoor({
+            "name": "پژو 207 مدل 1404", "brand": {"name": "پژو"},
+            "vehicleModelDate": "1404", "vehicleTransmission": stated,
+            "mileageFromOdometer": {"value": "5000"},
+            "offers": {"Price": 23_600_000_000, "sku": 10},
+        })
+        assert spec_key(car, resolve(car)).split("/")[3] == expected, stated

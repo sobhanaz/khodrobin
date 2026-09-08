@@ -1,6 +1,6 @@
 """Khodro45 — https://khodro45.com/api/v2/car_listing/
 
-The cleanest of the four sources. It is a Django REST Framework endpoint with
+The cleanest of the five sources. It is a Django REST Framework endpoint with
 ordinary limit/offset pagination, and it already publishes canonical slugs
 (`chery-tiggo5`) alongside Persian and English titles, plus an explicit trim.
 

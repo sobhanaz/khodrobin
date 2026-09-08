@@ -18,6 +18,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	appmail "github.com/sobhanaz/khodrobin/auth/internal/mail"
@@ -80,6 +82,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/forgot", a.rateLimited(3, a.forgot))
 	mux.HandleFunc("POST /api/auth/reset", a.rateLimited(5, a.reset))
 	mux.HandleFunc("GET /api/auth/me", a.authed(a.me))
+	mux.HandleFunc("POST /api/auth/me/marketing", a.authed(a.setMarketing))
 	mux.HandleFunc("GET /api/auth/searches", a.authed(a.listSearches))
 	mux.HandleFunc("POST /api/auth/searches", a.authed(a.createSearch))
 	mux.HandleFunc("DELETE /api/auth/searches/{id}", a.authed(a.deleteSearch))
@@ -255,6 +258,54 @@ func validEmail(s string) bool {
 // toward "Password1!" and away from a long Persian phrase, which is stronger and
 // easier to remember. Counted in runes so a Persian passphrase is not penalised
 // for its multi-byte characters.
+// passwordProblem names the rule a password fails, or returns "" if it passes.
+//
+// The three rules are length, one symbol, one capital. They were enforced in
+// the browser and nowhere else: composables/usePasswordRules.ts checked all
+// three and its comment claimed "the Go service enforces it independently",
+// which was simply untrue. Anything posting straight at this endpoint got the
+// length rule alone, so the policy was a suggestion to people using the form
+// and absent for everyone else.
+//
+// Runes, not bytes, and the same definitions the browser uses: a symbol is
+// anything that is not a letter, a digit or a space, so a Persian «؟» counts;
+// a capital is unicode.IsUpper rather than A-Z, so the two sides agree instead
+// of disagreeing at the moment of submit.
+//
+// It returns which rule failed. "Invalid password" makes someone guess, and
+// guessing at a rule they cannot see is how people give up on a signup form.
+func passwordProblem(s string) string {
+	n := utf8.RuneCountInString(s)
+	switch {
+	case n < minPasswordLen:
+		return fmt.Sprintf("رمز عبور باید دست‌کم %d نویسه باشد.", minPasswordLen)
+	case n > maxPasswordLen:
+		return fmt.Sprintf("رمز عبور نمی‌تواند بیشتر از %d نویسه باشد.", maxPasswordLen)
+	}
+	var symbol, upper bool
+	for _, r := range s {
+		switch {
+		case unicode.IsUpper(r):
+			upper = true
+		case !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsSpace(r):
+			symbol = true
+		}
+	}
+	if !symbol {
+		return "رمز عبور باید دست‌کم یک نماد داشته باشد، مثل ! یا @ یا ؟."
+	}
+	if !upper {
+		return "رمز عبور باید دست‌کم یک حرف بزرگ لاتین داشته باشد، مثل A."
+	}
+	return ""
+}
+
+// validPassword is the login-side check and stays length-only on purpose.
+//
+// Accounts created before the symbol and capital rules existed satisfy neither,
+// the first admin account among them. Enforcing the new rules at login would
+// lock out exactly the people who have been here longest, with no way back:
+// fixing it requires logging in.
 func validPassword(s string) bool {
 	n := utf8.RuneCountInString(s)
 	return n >= minPasswordLen && n <= maxPasswordLen
@@ -270,8 +321,8 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "ایمیل معتبر وارد کن.")
 		return
 	}
-	if !validPassword(in.Password) {
-		fail(w, http.StatusBadRequest, "رمز عبور باید حداقل ۱۰ نویسه باشد.")
+	if problem := passwordProblem(in.Password); problem != "" {
+		fail(w, http.StatusBadRequest, problem)
 		return
 	}
 
@@ -303,6 +354,9 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The opt-in is NOT acted on here. It is stored on the users row and
+	// honoured at verification, because anyone can type anyone's address into a
+	// registration form — which is the entire reason verification exists.
 	a.sendVerification(r.Context(), user.ID, user.Email)
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"status": "ok", "message": "اگر این ایمیل قبلاً ثبت نشده باشد، لینک تأیید برایت ارسال می‌شود."})
@@ -545,6 +599,32 @@ func isSixDigits(s string) bool {
 //
 // The guard matters: a second click on an old, still-valid link must not
 // re-welcome an account that has been active for months.
+// setMarketing is the authenticated way off the marketing list.
+//
+// The token route cannot serve everyone: rows backfilled for people who ticked
+// the register box before tokens existed carry an unusable placeholder, so a
+// secret will never match them. A signed-in request is proof of the same thing
+// the secret proves, and it is the route the account page uses.
+func (a *API) setMarketing(w http.ResponseWriter, r *http.Request, c *tokens.Claims) {
+	var in struct {
+		Consent bool `json:"consent"`
+	}
+	if err := decode(r, &in); err != nil {
+		fail(w, http.StatusBadRequest, "درخواست نامعتبر است.")
+		return
+	}
+	if err := a.store.SetMarketingConsent(r.Context(), c.UserID, in.Consent); err != nil {
+		a.log.Error("set marketing consent", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
+		return
+	}
+	msg := "دیگر ایمیل خبرنامه برایت نمی‌فرستیم."
+	if in.Consent {
+		msg = "از این به بعد خبرنامه برایت می‌فرستیم."
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "consent": in.Consent, "message": msg})
+}
+
 func (a *API) verifyUser(ctx context.Context, userID int64) error {
 	user, err := a.store.UserByID(ctx, userID)
 	if err != nil {
@@ -555,16 +635,58 @@ func (a *API) verifyUser(ctx context.Context, userID int64) error {
 		return err
 	}
 	if fresh {
-		a.sendWelcome(user.Email)
+		a.sendWelcome(user.Email, a.recordMarketingOptIn(ctx, user))
 	}
 	return nil
 }
 
+// recordMarketingOptIn honours the register checkbox, and returns the secret
+// that lets the person undo it.
+//
+// It ran in register() before this, straight after the account row was written
+// and before anyone had clicked anything. Registering with a stranger's address
+// and the box ticked therefore put that address into the mailable export marked
+// confirmed, and worse, upgraded a pending double opt-in someone else had
+// started. A tick on a form proves nothing about who owns the mailbox; the
+// verification click is the only thing that does, so the consent is honoured
+// exactly there.
+//
+// The secret is returned rather than discarded. The previous version generated
+// one, hashed it into the row, and let it fall out of scope, so those rows were
+// mailable with no token in existence that could unsubscribe them. It goes into
+// the welcome mail, which makes «لغوش هم یک کلیک است، از پای هر ایمیل» true.
+//
+// A failure is logged, not returned: the account is verified either way, and
+// losing the subscriber row costs less than failing a verification that worked.
+func (a *API) recordMarketingOptIn(ctx context.Context, user *store.User) string {
+	if !user.MarketingConsent {
+		return ""
+	}
+	secret, err := tokens.Secret()
+	if err != nil {
+		a.log.Error("subscriber secret", "err", err)
+		return ""
+	}
+	if err := a.store.AddConfirmedSubscriber(ctx, user.Email, tokens.Fingerprint(secret), "register"); err != nil {
+		a.log.Error("register opt-in subscriber", "err", err)
+		return ""
+	}
+	return secret
+}
+
 // sendWelcome mails the onboarding note without blocking the reply.
-func (a *API) sendWelcome(email string) {
+//
+// optOut is empty for anyone who did not tick the marketing box, and the
+// template omits the line entirely in that case rather than offering to
+// unsubscribe someone from a list they are not on.
+func (a *API) sendWelcome(email, optOut string) {
 	link := a.baseURL + "/"
+	unsub := ""
+	if optOut != "" {
+		unsub = a.baseURL + "/unsubscribe?token=" + url.QueryEscape(optOut)
+	}
 	go func() {
-		subject, body := appmail.Welcome(link)
+		subject, body := appmail.Welcome(link, unsub)
 		if err := a.mailer.Send(email, subject, body); err != nil {
 			a.log.Warn("welcome mail failed", "err", err)
 		}
@@ -622,8 +744,8 @@ func (a *API) reset(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "درخواست نامعتبر است.")
 		return
 	}
-	if !validPassword(in.Password) {
-		fail(w, http.StatusBadRequest, "رمز عبور باید حداقل ۱۰ نویسه باشد.")
+	if problem := passwordProblem(in.Password); problem != "" {
+		fail(w, http.StatusBadRequest, problem)
 		return
 	}
 	userID, err := a.store.ConsumeToken(r.Context(), "reset_password", tokens.Fingerprint(in.Token))
@@ -789,13 +911,30 @@ func (a *API) contact(w http.ResponseWriter, r *http.Request) {
 // is clamped rather than trusted — and an unusable label falls back to the
 // default instead of failing the request, because a marketing tag is never
 // worth losing a subscriber over.
+//
+// Trimming the ends is not enough. This string is written into the CSV export,
+// and a newline in the middle of it survives: csv.Writer quotes the cell
+// correctly across two physical lines, and the admin page counts exported
+// addresses by splitting on newline — so one crafted label reports more people
+// on the list than are on it. Every non-printable rune goes for the same
+// reason, bidi overrides included, since the export is opened in a spreadsheet
+// by a Persian reader and a character that reverses the run around it is a
+// display trick, not a label.
 func signupSource(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" || utf8.RuneCountInString(s) > 40 {
+	if s == "" || utf8.RuneCountInString(s) > 40 || strings.ContainsFunc(s, unlabellable) {
 		return "landing"
 	}
 	return s
 }
+
+// zwnj is the half-space Persian words are spelled with.
+const zwnj = '\u200c'
+
+// unlabellable rejects what cannot appear in a label. The half-space is the one
+// invisible character that stays: «صفحه‌ی اصلی» is two words, and a rule that
+// drops it on the floor is a Latin rule wearing a safety badge.
+func unlabellable(r rune) bool { return !unicode.IsPrint(r) && r != zwnj }
 
 // subscribe starts double opt-in, and answers the same way every time.
 //

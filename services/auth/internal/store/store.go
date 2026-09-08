@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -353,28 +354,69 @@ func scanSubscribers(rows pgx.Rows) ([]Subscriber, error) {
 	return out, rows.Err()
 }
 
+// resendWindow is how long a pending address is left in peace before another
+// confirmation mail is owed. Long enough that a form retyped in frustration
+// sends nothing, short enough that somebody who genuinely lost the message can
+// ask for it again over a coffee.
+const resendWindow = 15 * time.Minute
+
+// maxUnansweredSends is the ceiling the window alone did not provide.
+//
+// The window throttles; it does not stop. The reset arm of the upsert carried
+// no time gate at all, so an address that had confirmed and later left could be
+// pushed back to pending once per window indefinitely — measured at four mails
+// across four windows, which is ninety-six a day to somebody who had already
+// asked to go. Somebody who ignores three confirmation mails is answering.
+const maxUnansweredSends = 3
+
 // SubscribePending records an unconfirmed subscription and reports whether a
 // confirmation mail is owed.
 //
-// The conflict clause carries the two rules that make this list legal. A
-// returning address is fully reset — new token, confirmed_at cleared — because
-// somebody who unsubscribed and came back is giving consent again, not resuming
-// the consent they withdrew. And an address that is already confirmed and still
-// subscribed is left untouched: without that guard, anyone typing a stranger's
-// address into the form could knock them off the list until they re-confirmed.
+// The conflict clause carries every rule that makes this list legal, and each
+// one is a case the previous version got wrong or right for a reason:
+//
+// Confirmed and still subscribed — nothing happens. Without that guard anyone
+// typing a stranger's address into the form could clear their consent until
+// they re-confirmed.
+//
+// Confirmed, then unsubscribed — a full reset, because somebody who left and
+// came back is giving consent again rather than resuming the consent they
+// withdrew. This is the only way back onto the list.
+//
+// Never confirmed, then unsubscribed — nothing happens, ever. That row belongs
+// to someone who clicked «حذف کامل این نشانی» in a message they never asked
+// for, and the mail called it complete removal. Lumping it in with the case
+// above meant the next person to type that address into the box reset the row
+// and mailed them again. The cost of getting this right is that the address is
+// permanently suppressed: a genuine later signup from that person is answered
+// with the same silent 202 as everything else, and they have to write in.
+//
+// Never confirmed, still subscribed — one mail per resendWindow. Before that
+// clock existed every POST rotated the token and reported a mail owed, so the
+// endpoint was an unbounded confirmation-mail amplifier pointed at whichever
+// address the sender chose. Outside the window the token is left alone as
+// well, which is what keeps the link in the message already sitting in their
+// inbox working.
 func (s *Store) SubscribePending(ctx context.Context, email, tokenHash, source string) (bool, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO subscribers (email, token_hash, source)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO subscribers (email, token_hash, source, last_sent_at, sends)
+		 VALUES ($1, $2, $3, now(), 1)
 		 ON CONFLICT (email) DO UPDATE
 		    SET token_hash = EXCLUDED.token_hash,
 		        confirmed_at = NULL,
 		        unsubscribed_at = NULL,
-		        source = EXCLUDED.source
-		  WHERE subscribers.confirmed_at IS NULL OR subscribers.unsubscribed_at IS NOT NULL
+		        source = EXCLUDED.source,
+		        last_sent_at = now(),
+		        sends = subscribers.sends + 1
+		  WHERE subscribers.sends < `+strconv.Itoa(maxUnansweredSends)+`
+		    AND ((subscribers.confirmed_at IS NOT NULL AND subscribers.unsubscribed_at IS NOT NULL)
+		      OR (subscribers.confirmed_at IS NULL AND subscribers.unsubscribed_at IS NULL
+		          AND (subscribers.last_sent_at IS NULL
+		               OR subscribers.last_sent_at < now() - $4::interval)))
 		 RETURNING id`,
-		NormalizeEmail(email), tokenHash, source).Scan(&id)
+		NormalizeEmail(email), tokenHash, source,
+		fmt.Sprintf("%d seconds", int(resendWindow.Seconds()))).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -382,6 +424,33 @@ func (s *Store) SubscribePending(ctx context.Context, email, tokenHash, source s
 		return false, fmt.Errorf("subscribe: %w", err)
 	}
 	return true, nil
+}
+
+// AddConfirmedSubscriber puts a consent that was given somewhere else onto the
+// list, already confirmed.
+//
+// The one caller is registration with the marketing box ticked. That tick is
+// the same act a double opt-in mail exists to collect — a form the person
+// filled in themselves — so asking them to confirm it a second time would only
+// mean sending a second message to an address that is already receiving its
+// verification link.
+//
+// The conflict clause upgrades a pending row in place rather than replacing it:
+// the token stays whatever was mailed out, because that link is the unsubscribe
+// link in their inbox. An unsubscribed row is left alone for the reason spelled
+// out above — nothing puts a person who left back on the list except their own
+// return through the newsletter box.
+func (s *Store) AddConfirmedSubscriber(ctx context.Context, email, tokenHash, source string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO subscribers (email, token_hash, source, confirmed_at)
+		 VALUES ($1, $2, $3, now())
+		 ON CONFLICT (email) DO UPDATE SET confirmed_at = now(), sends = 0
+		  WHERE subscribers.confirmed_at IS NULL AND subscribers.unsubscribed_at IS NULL`,
+		NormalizeEmail(email), tokenHash, source)
+	if err != nil {
+		return fmt.Errorf("add confirmed subscriber: %w", err)
+	}
+	return nil
 }
 
 // ConfirmSubscriber turns a claimed address into a consented one.
@@ -422,6 +491,50 @@ func (s *Store) Unsubscribe(ctx context.Context, tokenHash string) error {
 	return nil
 }
 
+// SetMarketingConsent is the exit for consent given by ticking the register box.
+//
+// Unsubscribe matches on a token, and the rows backfilled for people who ticked
+// that box before tokens were issued carry a deliberately unusable placeholder,
+// so no secret can ever reach them. They all belong to registered accounts
+// though, and an authenticated request naming its own address proves as much as
+// a mailed secret does. Without this they were mailable with no way off, which
+// is worse than the state it replaced, where they at least reached no campaign.
+//
+// Both tables move together, so the checkbox on the account page and the export
+// can never disagree about whether someone wants to hear from us.
+func (s *Store) SetMarketingConsent(ctx context.Context, userID int64, on bool) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("marketing consent: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var email string
+	if err := tx.QueryRow(ctx,
+		`UPDATE users SET marketing_consent = $2,
+		        marketing_consent_at = CASE WHEN $2 THEN now() ELSE marketing_consent_at END
+		  WHERE id = $1 RETURNING email`, userID, on).Scan(&email); err != nil {
+		return fmt.Errorf("marketing consent: %w", err)
+	}
+
+	if on {
+		// Turning it back on re-confirms rather than re-mailing: the account is
+		// already verified, which is the thing a confirmation mail establishes.
+		_, err = tx.Exec(ctx,
+			`UPDATE subscribers SET unsubscribed_at = NULL, confirmed_at = COALESCE(confirmed_at, now()),
+			        sends = 0
+			  WHERE email = $1`, email)
+	} else {
+		_, err = tx.Exec(ctx,
+			`UPDATE subscribers SET unsubscribed_at = COALESCE(unsubscribed_at, now())
+			  WHERE email = $1`, email)
+	}
+	if err != nil {
+		return fmt.Errorf("marketing consent: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) ListSubscribers(ctx context.Context, limit, offset int) ([]Subscriber, int64, error) {
 	var total int64
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM subscribers`).Scan(&total); err != nil {
@@ -437,6 +550,14 @@ func (s *Store) ListSubscribers(ctx context.Context, limit, offset int) ([]Subsc
 	return list, total, err
 }
 
+// mailableWhere is the definition of "may be mailed", written once.
+//
+// The export and the number on the dashboard both claim to be this list. Two
+// copies of the predicate is one copy too many: the day they drift, the admin
+// page promises a list the CSV does not deliver, and nothing in either place
+// looks wrong.
+const mailableWhere = `confirmed_at IS NOT NULL AND unsubscribed_at IS NULL`
+
 // MailableSubscribers is the export, and the filter is the entire point of it.
 //
 // Confirmed and not unsubscribed: the list that can legally be mailed. Anything
@@ -445,7 +566,7 @@ func (s *Store) ListSubscribers(ctx context.Context, limit, offset int) ([]Subsc
 func (s *Store) MailableSubscribers(ctx context.Context) ([]Subscriber, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT `+subscriberCols+` FROM subscribers
-		  WHERE confirmed_at IS NOT NULL AND unsubscribed_at IS NULL
+		  WHERE `+mailableWhere+`
 		  ORDER BY confirmed_at`)
 	if err != nil {
 		return nil, fmt.Errorf("mailable subscribers: %w", err)
@@ -500,11 +621,16 @@ type Counts struct {
 	ActiveSessions int64 `json:"active_sessions"`
 	UnreadContact  int64 `json:"unread_contact"`
 	Subscribers    int64 `json:"subscribers"`
-	// Confirmed and not unsubscribed — the number that can actually be mailed,
-	// which is the only one worth putting on a dashboard. Total minus this is
-	// the funnel loss, and it is visible from the two figures together.
+	// The length of the export, counted by the same predicate the export
+	// selects on — this is the number that can actually be mailed, and it is
+	// the only one worth putting on a dashboard. Total minus this is the funnel
+	// loss, and it is visible from the two figures together.
 	SubscribersConfirmed int64 `json:"subscribers_confirmed"`
-	MarketingOptin       int64 `json:"marketing_optin"`
+	// Accounts that ticked the marketing box. Since registration started
+	// writing a confirmed subscriber row, every one of these is already inside
+	// SubscribersConfirmed: this is a breakdown of that number, never something
+	// to add to it.
+	MarketingOptin int64 `json:"marketing_optin"`
 }
 
 func (s *Store) Counts(ctx context.Context) (*Counts, error) {
@@ -516,8 +642,7 @@ func (s *Store) Counts(ctx context.Context) (*Counts, error) {
 		       (SELECT count(*) FROM sessions WHERE revoked_at IS NULL AND expires_at > now()),
 		       (SELECT count(*) FROM contact_messages WHERE handled_at IS NULL),
 		       (SELECT count(*) FROM subscribers),
-		       (SELECT count(*) FROM subscribers
-		         WHERE confirmed_at IS NOT NULL AND unsubscribed_at IS NULL),
+		       (SELECT count(*) FROM subscribers WHERE `+mailableWhere+`),
 		       (SELECT count(*) FROM users WHERE marketing_consent)`,
 	).Scan(&c.Users, &c.Verified, &c.SavedSearches, &c.ActiveSessions, &c.UnreadContact,
 		&c.Subscribers, &c.SubscribersConfirmed, &c.MarketingOptin)

@@ -135,17 +135,33 @@ func codePanel(code, link string) string {
 // and this is the same news arriving in the place the person actually reads.
 // It also names the two things the account is now good for, because a feature
 // nobody is told about might as well not exist.
-func Welcome(link string) (string, string) {
+// Welcome also carries the marketing opt-out, when there is one to carry.
+//
+// unsubscribe is empty for anyone who left the register checkbox alone, and the
+// line is then omitted rather than offering to remove them from a list they
+// were never added to. When it is present this is the only place the token ever
+// reaches the person: the row is written at verification and the secret is not
+// stored anywhere in recoverable form, so a mail that dropped this link would
+// leave an address on the list with no way off it. That is exactly the state
+// this replaced.
+func Welcome(link, unsubscribe string) (string, string) {
+	lines := []string{
+		heading("به خودروبین خوش آمدی"),
+		para("ایمیلت تأیید شد و حسابت فعال است. از این به بعد می‌توانی جست‌وجوهایت را ذخیره کنی " +
+			"و برای تغییر قیمت میانه‌شان هشدار بگیری."),
+		button(link, "شروع جست‌وجو"),
+		`<div style="font-size:11px;color:#6b7488;line-height:2;margin-top:2px">` +
+			`هشدار قیمت فقط با ایمیل فرستاده می‌شود، و لغوش هر وقت بخواهی یک کلیک است.</div>`,
+	}
+	if unsubscribe != "" {
+		lines = append(lines,
+			`<div style="font-size:11px;color:#6b7488;line-height:2">`+
+				`خبرنامه را هم تیک زده بودی. `+
+				`<a href="`+unsubscribe+`" style="color:#8a93a6">لغو خبرنامه</a></div>`)
+	}
 	body := shell(
-		"حسابت فعال شد — حالا می‌توانی جست‌وجو ذخیره کنی و برای تغییر قیمت‌شان هشدار بگیری.",
-		strings.Join([]string{
-			heading("به خودروبین خوش آمدی"),
-			para("ایمیلت تأیید شد و حسابت فعال است. از این به بعد می‌توانی جست‌وجوهایت را ذخیره کنی " +
-				"و برای تغییر قیمت میانه‌شان هشدار بگیری."),
-			button(link, "شروع جست‌وجو"),
-			`<div style="font-size:11px;color:#6b7488;line-height:2;margin-top:2px">` +
-				`هشدار قیمت فقط با ایمیل فرستاده می‌شود — و لغوش هر وقت بخواهی یک کلیک است.</div>`,
-		}, ""),
+		"حسابت فعال شد. حالا می‌توانی جست‌وجو ذخیره کنی و برای تغییر قیمت‌شان هشدار بگیری.",
+		strings.Join(lines, ""),
 	)
 	return "به خودروبین خوش آمدی", body
 }

@@ -4,22 +4,22 @@
 const AXES = [
   { en: 'numbers', fa: 'عدد', catches: 'قیمتی یا کارکردی که در ورودی نبوده.' },
   { en: 'percentages', fa: 'درصد', catches: 'فاصله‌ای تا میانه که هیچ آگهی‌ای پشتش نیست.' },
-  { en: 'topics', fa: 'موضوع', catches: 'موضوعی که ورودی اصلاً نداشته — گارانتی، رنگ، آپشن.' },
+  { en: 'topics', fa: 'موضوع', catches: 'موضوعی که ورودی اصلاً نداشته: گارانتی، رنگ، آپشن.' },
   { en: 'sources', fa: 'منبع', catches: 'نسبت‌دادن آگهی به سایتی که اینجا آگهی‌ای از آن نیست.' },
   { en: 'coherence', fa: 'انسجام', catches: 'جمله‌ای که تک‌تک عددهایش درست است و در کل بی‌معنی.' },
 ]
 </script>
 
 <template>
-  <section class="mt-20" aria-labelledby="guard-h">
+  <section class="mt-[var(--space-section)]" aria-labelledby="guard-h">
     <div class="glass rounded-3xl p-6 sm:p-8">
       <span class="inline-flex items-center rounded-full border border-good/30 bg-good/[.12] px-3 py-1 font-mono text-[.7rem] tracking-wider text-good">
         guard
       </span>
-      <h2 id="guard-h" class="mt-4 text-[clamp(1.4rem,3.6vw,2rem)] font-black leading-tight tracking-tight">
+      <h2 id="guard-h" class="mt-4 text-title">
         هر توضیح، قبل از آنکه ببینی‌اش، رد شده است یا از پنج آزمون گذشته
       </h2>
-      <p class="mt-3 max-w-[62ch] text-[.95rem] leading-8 text-ink-2">
+      <p class="mt-3 max-w-[62ch] text-lead text-ink-2">
         نکته‌ی جالب لایه‌ی هوش مصنوعی، پرامپت نیست. هر توضیحی که مدل می‌نویسد دوباره روی پنج محور
         مستقل با همان داده‌ی ورودی سنجیده می‌شود، چون مدل به پنج شکل متفاوت خطا می‌کند.
       </p>
@@ -41,13 +41,13 @@ const AXES = [
       <!-- The fifth axis is the one worth telling: four factual checks passed a
            sentence that was true and meaningless, and only a check for sense
            could catch it. -->
-      <figure class="mt-6 rounded-2xl border-r-2 border-warn/60 bg-warn/[.07] p-5">
+      <figure class="mt-6 rounded-2xl border-s-2 border-warn/60 bg-warn/[.07] p-5">
         <blockquote class="text-[1rem] font-bold leading-9 text-ink">
           «کارکرد صفر کیلومتر را از دست می‌دهی.»
         </blockquote>
         <figcaption class="mt-3 text-[.88rem] leading-8 text-ink-2">
           این جمله روی یک کارت واقعی نشست. تک‌تک عددهایش درست بود، پس هر چهار محور واقعیت‌سنج
-          تأییدش کردند — و باز هم مزخرف است: ارزان‌ترین گزینه هم‌زمان کم‌کارکردترین بود و
+          تأییدش کردند، و باز هم مزخرف است: ارزان‌ترین گزینه هم‌زمان کم‌کارکردترین بود و
           معامله‌ای در کار نبود که نامش را ببرد. ۱۰٪ از توضیح‌های زنده همین کار را می‌کردند.
           محور پنجم برای همین اضافه شد.
         </figcaption>
@@ -56,7 +56,7 @@ const AXES = [
       <p class="mt-5 text-[.92rem] leading-8 text-ink-2">
         <b class="font-bold text-ink">پرامپت یک درخواست است؛ نگهبان یک تضمین.</b>
         وقتی نگهبان جلوی یک توضیح را می‌گیرد، کارت همین را می‌گوید و نشان می‌دهد چه چیزی رد شده،
-        بعد به جمله‌ای برمی‌گردد که از خود داده ساخته شده — همیشه در دسترس، همیشه درست.
+        بعد به جمله‌ای برمی‌گردد که از خود داده ساخته شده: همیشه در دسترس، همیشه درست.
       </p>
     </div>
   </section>

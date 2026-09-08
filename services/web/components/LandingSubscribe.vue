@@ -4,9 +4,9 @@ withDefaults(defineProps<{
   compact?: boolean
 }>(), { compact: false })
 
-// Two instances live on this page (section and footer), so the label/input
-// pairing cannot use a literal id — duplicate ids silently break the second
-// label and a screen reader lands on an unnamed field.
+// This form appears on more than one page and can appear twice on one, so the
+// label/input pairing cannot use a literal id: duplicate ids silently break the
+// second label and a screen reader lands on an unnamed field.
 const uid = useId()
 
 const email = ref('')
@@ -32,7 +32,7 @@ async function submit() {
     state.value = 'sent'
   } catch {
     // The endpoint answers 202 for every address on purpose, so a failure here
-    // is the network or the service — never "this address is already taken".
+    // is the network or the service, never "this address is already taken".
     // Saying anything about the address would rebuild the enumeration oracle
     // the 202 exists to remove.
     state.value = 'error'
@@ -49,20 +49,14 @@ function startOver() {
 <template>
   <div class="glass rounded-2xl p-5 sm:p-7">
     <div v-if="!compact">
-      <h2 class="text-[clamp(1.25rem,3.2vw,1.6rem)] font-black tracking-tight">
+      <h2 class="text-head">
         وقتی قیمت خودرویت تکان خورد، خبردار شو
       </h2>
       <!-- What they are signing up for, before the field, not in fine print
            after it. A list someone did not know they joined is a spam report. -->
-      <ul class="mt-3 grid gap-1.5 text-[.88rem] leading-8 text-ink-2">
-        <li class="flex gap-2">
-          <span class="text-good" aria-hidden="true">•</span>
-          <span><b class="font-bold text-ink">هشدار قیمت</b> — وقتی میانه‌ی بازار برای خودروهایی که دنبالشان هستی جابه‌جا شد.</span>
-        </li>
-        <li class="flex gap-2">
-          <span class="text-good" aria-hidden="true">•</span>
-          <span><b class="font-bold text-ink">خبر قابلیت تازه</b> — وقتی منبع یا امکان جدیدی اضافه شد.</span>
-        </li>
+      <ul class="mt-3 grid list-disc gap-1.5 ps-5 text-[.88rem] leading-8 text-ink-2 marker:text-good">
+        <li><b class="font-bold text-ink">هشدار قیمت</b>: وقتی میانه‌ی بازار برای خودروهایی که دنبالشان هستی جابه‌جا شد.</li>
+        <li><b class="font-bold text-ink">خبر قابلیت تازه</b>: وقتی منبع یا امکان جدیدی اضافه شد.</li>
       </ul>
       <p class="mt-2 text-[.82rem] leading-7 text-ink-3">
         همین دو تا. نه چیز دیگری، نه هفته‌ای چند بار.
@@ -87,10 +81,10 @@ function startOver() {
           :aria-invalid="fieldError ? 'true' : undefined"
           :aria-describedby="fieldError ? `${uid}-err` : `${uid}-note`"
           class="min-h-[48px] w-full rounded-xl border bg-surface px-4 py-3 text-ink outline-none transition
-                 placeholder:text-ink-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                 placeholder:text-ink-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           :class="fieldError
-            ? 'border-accent/60 focus-visible:outline-accent'
-            : 'border-white/[.12] focus:border-accent/55 focus:shadow-[0_0_0_4px_rgba(255,46,77,.12)] focus-visible:outline-accent'"
+            ? 'border-accent/60'
+            : 'border-white/[.12] focus:border-focus/60 focus:shadow-[0_0_0_4px_rgba(107,116,230,.16)]'"
           @blur="touched = true"
         >
         <p v-if="fieldError" :id="`${uid}-err`" role="alert" class="mt-1.5 flex items-start gap-1.5 text-[.8rem] text-accent">
@@ -103,7 +97,7 @@ function startOver() {
         :disabled="!valid || state === 'sending'"
         class="min-h-[48px] shrink-0 rounded-xl bg-accent px-5 font-bold text-white transition
                enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50
-               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
+               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus
                sm:mt-[30px]"
       >{{ state === 'sending' ? 'در حال ارسال…' : 'عضویت' }}</button>
     </form>
@@ -121,12 +115,13 @@ function startOver() {
         </p>
         <p class="mt-1 text-center font-mono text-[.8rem] text-ink-3" dir="ltr">{{ sentTo }}</p>
         <p class="mt-4 border-t border-good/20 pt-3 text-center text-[.8rem] leading-7 text-ink-2">
-          نرسید؟ پوشه‌ی <span class="text-ink">اسپم</span> را نگاه کن — دامنه‌ی تازه معمولاً آنجا می‌افتد.
+          نرسید؟ پوشه‌ی <span class="text-ink">اسپم</span> را نگاه کن؛ دامنه‌ی تازه معمولاً آنجا می‌افتد.
         </p>
         <div class="mt-3 text-center">
           <button
             type="button"
-            class="min-h-[44px] rounded-full border border-white/[.12] px-4 text-[.82rem] text-ink-3 transition hover:text-ink"
+            class="min-h-[44px] rounded-full border border-white/[.12] px-4 text-[.82rem] text-ink-3 transition hover:text-ink
+                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             @click="startOver"
           >ایمیل را عوض کن</button>
         </div>

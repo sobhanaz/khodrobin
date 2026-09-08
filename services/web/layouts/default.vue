@@ -7,7 +7,7 @@ onMounted(() => { void init() })
 watch(() => route.fullPath, () => { open.value = false })
 
 const links = [
-  { to: '/', label: 'جست‌وجو' },
+  { to: '/search', label: 'جست‌وجو' },
   { to: '/about', label: 'درباره' },
   { to: '/faq', label: 'پرسش‌ها' },
   { to: '/contact', label: 'تماس' },
@@ -21,7 +21,7 @@ const links = [
       style="background: rgba(7,8,11,.72); backdrop-filter: blur(14px) saturate(140%)"
     >
       <div class="mx-auto flex h-[62px] max-w-[1080px] items-center gap-3 px-5">
-        <NuxtLink to="/" class="flex shrink-0 items-center gap-2.5 text-[1.06rem] font-black tracking-tight">
+        <NuxtLink to="/" class="flex shrink-0 items-center gap-2.5 text-[1.06rem] font-black">
           <BrandMark :size="26" class="shrink-0 text-ink" />
           خودروبین
         </NuxtLink>

@@ -175,7 +175,11 @@ def build(raw_path: pathlib.Path) -> dict:
             "source_count": len({o["source"] for o in offers}),
             # Below three offers a "market median" is a fiction — with two, it
             # is the mean of the only two asking prices, and no seller is asking
-            # it. The UI shows a range instead.
+            # it. Consumed by services/ai/app/explain.py, which then says
+            # «ارزان‌ترین آگهی از N آگهی» instead of «X٪ پایین‌تر از میانه»; the
+            # Vue cards do not branch on it and still print the median. The
+            # earlier version of this comment claimed the UI showed a range
+            # instead, which was never true anywhere in the front end.
             "median_price": median,
             "median_reliable": len(prices) >= 3,
             # The range shown describes offers a buyer can actually compare.

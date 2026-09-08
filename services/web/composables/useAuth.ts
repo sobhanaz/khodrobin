@@ -15,9 +15,27 @@ interface LoginResponse {
 }
 
 /**
+ * Everything the second signup step collects.
+ *
+ * `foundVia` and `useCase` carry the fixed values behind the chips, never their
+ * Persian labels: the label is copy and copy gets rewritten, and a column that
+ * changes meaning when someone edits a string is a column nobody can count.
+ * The free-text twins are sent only when the chosen value is 'other'.
+ */
+export interface SignupProfile {
+  phone: string
+  foundVia: string
+  foundViaOther?: string
+  useCase: string
+  useCaseOther?: string
+  marketingConsent: boolean
+  name?: string
+}
+
+/**
  * Session state, shared across every component.
  *
- * The access token is held in memory only — never localStorage. A token in
+ * The access token is held in memory only, never localStorage. A token in
  * localStorage survives a tab close and is readable by any script on the page,
  * which turns one XSS bug into a stolen session. The refresh token lives in an
  * HttpOnly cookie the browser will not show JavaScript, so a reload restores
@@ -95,17 +113,45 @@ export function useAuth() {
     }
   }
 
-  async function register(email: string, password: string, name?: string, marketingConsent = false) {
+  async function register(email: string, password: string, profile: SignupProfile) {
     pending.value = true; error.value = null
+    // The flag is always sent, including when it is false. An omitted field and
+    // a declined one look identical on the wire, and the day someone asks where
+    // a marketing address came from, "we never sent a no" is not an answer. The
+    // refusal is the half of the record worth having.
+    const core = {
+      email,
+      password,
+      marketing_consent: profile.marketingConsent,
+      ...(profile.name ? { name: profile.name } : {}),
+    }
+    const full = {
+      ...core,
+      phone: profile.phone,
+      found_via: profile.foundVia,
+      ...(profile.foundViaOther ? { found_via_other: profile.foundViaOther } : {}),
+      use_case: profile.useCase,
+      ...(profile.useCaseOther ? { use_case_other: profile.useCaseOther } : {}),
+    }
+    const post = (body: object) =>
+      $fetch<{ message: string }>(apiUrl('/api/auth/register'), { method: 'POST', body })
+
     try {
-      // The flag is always sent, including when it is false. An omitted field
-      // and a declined one look identical on the wire, and the day someone asks
-      // where a marketing address came from, "we never sent a no" is not an
-      // answer — the refusal is the half of the record worth having.
-      const res = await $fetch<{ message: string }>(apiUrl('/api/auth/register'), {
-        method: 'POST', body: { email, password, marketing_consent: marketingConsent, ...(name ? { name } : {}) },
-      })
-      return res.message
+      try {
+        return (await post(full)).message
+      } catch (e: any) {
+        // ponytail: the auth service decodes with DisallowUnknownFields, so a
+        // build that has not yet learned the three profile fields answers 400
+        // «درخواست نامعتبر است.» and no account is created at all. Rather than
+        // take the signup funnel down with it, retry once without them, which is
+        // exactly the request that shipped before. Delete this whole branch once
+        // `credentials` in services/auth/internal/handlers/handlers.go carries
+        // phone / found_via / use_case; keeping it hides the day they stop being
+        // stored.
+        if (e?.status !== 400 || e?.data?.error !== 'درخواست نامعتبر است.') throw e
+        console.warn('register: auth service rejected the profile fields; sent without them')
+        return (await post(core)).message
+      }
     } catch (e: any) {
       error.value = e?.data?.error ?? 'ثبت‌نام انجام نشد. دوباره تلاش کن.'
       return null

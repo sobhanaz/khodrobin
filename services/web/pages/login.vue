@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'ورود — خودروبین', robots: 'noindex' })
+useSeoMeta({ title: 'ورود به خودروبین', robots: 'noindex' })
 
 const { login, pending, error } = useAuth()
 const route = useRoute()
@@ -40,7 +40,7 @@ async function submit() {
         :error="emailError"
         required
         autofocus
-        @blur="touched.email = true"
+        @focusout="touched.email = true"
       />
 
       <div>
@@ -55,14 +55,14 @@ async function submit() {
              deliberately not wired to `satisfied`: every account created before
              this policy existed satisfies only the length rule, the first admin
              account among them, and a login form that enforced the new rules
-             would lock out the people who have been here longest — with no way
+             would lock out the people who have been here longest, with no way
              to fix it, because fixing it requires logging in. -->
         <PasswordRules :password="form.password" :enforcing="false" />
         <!-- Directly beneath the field it relates to. Someone reaching for this
              has just failed to remember the thing immediately above it. -->
         <NuxtLink
           :to="form.email.trim() ? `/forgot?email=${encodeURIComponent(form.email.trim())}` : '/forgot'"
-          class="mt-1.5 inline-block text-[.8rem] text-ink-3 transition hover:text-ink-2"
+          class="mt-1.5 inline-block text-[.8rem] text-ink-2 transition hover:text-ink"
         >رمزت را فراموش کرده‌ای؟</NuxtLink>
       </div>
 
@@ -86,16 +86,12 @@ async function submit() {
         :disabled="pending"
         class="min-h-[48px] rounded-xl bg-accent px-5 font-bold text-white transition
                enabled:hover:brightness-110 disabled:opacity-50
-               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >{{ pending ? 'در حال ورود…' : 'ورود' }}</button>
 
-      <p class="text-center text-[.85rem] text-ink-3">
+      <p class="text-center text-[.85rem] text-ink-2">
         حساب نداری؟
         <NuxtLink to="/register" class="text-accent hover:underline">ساخت حساب</NuxtLink>
-      </p>
-
-      <p class="mt-2 border-t border-white/[.07] pt-4 text-center text-[.76rem] leading-7 text-ink-3">
-        جست‌وجو به حساب نیاز ندارد — ورود فقط برای ذخیره‌ی جست‌وجو و هشدار قیمت است.
       </p>
     </form>
   </AuthShell>

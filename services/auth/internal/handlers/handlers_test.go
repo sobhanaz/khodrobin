@@ -407,19 +407,132 @@ func TestTheExportCarriesOnlyMailableRows(t *testing.T) {
 	}
 }
 
-func TestRegisterRecordsTheOptInEitherWay(t *testing.T) {
-	// The register page promises no promotional mail. The checkbox is the only
-	// thing that changes that, so a missing field has to mean no.
+func TestSignupSourceRejectsWhatWouldBreakTheExport(t *testing.T) {
+	// The label goes straight into the CSV. csv.Writer quotes an embedded
+	// newline correctly, across two physical lines — and the admin page counts
+	// exported addresses by splitting on newline, so one crafted label tells
+	// the operator that more people are on the list than are. TrimSpace only
+	// ever looked at the ends.
+	for _, s := range []string{
+		"footer\nnewsletter",
+		"landing\r\nlanding",
+		"tab\there",
+		"nul\x00byte",
+		"zero​width",
+		"rtl‮override",
+	} {
+		if got := signupSource(s); got != "landing" {
+			t.Errorf("signupSource(%q) = %q, want the default", s, got)
+		}
+	}
+	// The half-space is not a control character in any sense that matters here.
+	// Persian words are spelled with it, and a rule that throws «صفحه‌ی اصلی»
+	// away is a Latin rule wearing a safety badge.
+	for _, tc := range []struct{ in, want string }{
+		{"footer", "footer"},
+		{"  hero-cta  ", "hero-cta"},
+		{"صفحه‌ی اصلی", "صفحه‌ی اصلی"},
+		{"", "landing"},
+		{strings.Repeat("x", 41), "landing"},
+	} {
+		if got := signupSource(tc.in); got != tc.want {
+			t.Errorf("signupSource(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestASourceLabelCannotAddALineToTheExport(t *testing.T) {
+	// The same defect from the outside: whatever the form sends, the value that
+	// reaches the row cannot carry a line break into the CSV.
 	mux, _ := testAPI(t)
+	if rec := call(t, mux, http.MethodPost, "/api/auth/subscribe",
+		`{"email":"one@khodrobin.test","source":"footer\nphantom@khodrobin.test"}`,
+		""); rec.Code != http.StatusAccepted {
+		t.Fatalf("subscribe status = %d", rec.Code)
+	}
+	rows := listSubscribers(t, mux)
+	if len(rows) != 1 {
+		t.Fatalf("subscriber rows = %d, want 1", len(rows))
+	}
+	if strings.ContainsAny(rows[0].Source, "\r\n") {
+		t.Errorf("source = %q, still carrying the line break it was sent with", rows[0].Source)
+	}
+}
+
+func listSubscribers(t *testing.T, mux *http.ServeMux) []store.Subscriber {
+	t.Helper()
+	rec := call(t, mux, http.MethodGet, "/api/auth/admin/subscribers", "", bearer(t, true))
+	var page struct {
+		Subscribers []store.Subscriber `json:"subscribers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	return page.Subscribers
+}
+
+func TestRegisteringWithTheBoxTickedDoesNotJoinTheListUntilVerified(t *testing.T) {
+	// This test used to assert the opposite, and the opposite was a hole.
+	//
+	// Registration acted on the tick immediately, so posting a stranger's
+	// address with marketing_consent:true put that address into the mailable
+	// export marked confirmed, having clicked nothing. Anyone can type anyone's
+	// address into a signup form; the verification click is the only evidence
+	// of who owns the mailbox, which is the whole reason verification exists.
+	mux, _ := testAPI(t)
+	const in, out = "ticked@khodrobin.test", "untouched@khodrobin.test"
 	for _, body := range []string{
-		`{"email":"in@khodrobin.test","password":"a-long-enough-one","marketing_consent":true}`,
-		`{"email":"out@khodrobin.test","password":"a-long-enough-one","marketing_consent":false}`,
-		`{"email":"silent@khodrobin.test","password":"a-long-enough-one"}`,
+		`{"email":"` + in + `","password":"A-long-enough-1!","marketing_consent":true}`,
+		`{"email":"` + out + `","password":"A-long-enough-1!"}`,
 	} {
 		if rec := call(t, mux, http.MethodPost, "/api/auth/register", body, ""); rec.Code != http.StatusAccepted {
 			t.Fatalf("register gave status %d for %s", rec.Code, body)
 		}
 	}
+
+	if got := exportedEmails(t, mux); len(got) != 0 {
+		t.Errorf("export = %v, want nobody: neither address has been verified", got)
+	}
+	if rows := listSubscribers(t, mux); len(rows) != 0 {
+		t.Errorf("subscriber rows = %+v, want none before verification", rows)
+	}
+}
+
+func TestVerifyingAnOptedInAccountJoinsTheListWithAWayOut(t *testing.T) {
+	mux, st := testAPI(t)
+	const email = "ticked@khodrobin.test"
+	if rec := call(t, mux, http.MethodPost, "/api/auth/register",
+		`{"email":"`+email+`","password":"A-long-enough-1!","marketing_consent":true}`, ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("register gave %d", rec.Code)
+	}
+	verifyNewestAccount(t, mux, st, email)
+
+	if got := exportedEmails(t, mux); len(got) != 1 || got[0] != email {
+		t.Errorf("export = %v, want the verified opt-in", got)
+	}
+	rows := listSubscribers(t, mux)
+	if len(rows) != 1 || rows[0].ConfirmedAt == nil || rows[0].Source != "register" {
+		t.Fatalf("subscriber rows = %+v, want one confirmed row sourced at register", rows)
+	}
+}
+
+func TestTheSummaryCountAndTheExportAreOneList(t *testing.T) {
+	// Both are described as the mailable list, and the admin page adds the
+	// opt-in count on top of the subscriber count. After registration started
+	// writing a row, that sum double-counts — the two figures here have to be
+	// the one number, and marketing_optin has to be inside it.
+	mux, st := testAPI(t)
+	seed(t, st, "confirmed@khodrobin.test", "a", true, false)
+	seed(t, st, "pending@khodrobin.test", "b", false, false)
+	seed(t, st, "left@khodrobin.test", "c", true, true)
+	if rec := call(t, mux, http.MethodPost, "/api/auth/register",
+		`{"email":"ticked@khodrobin.test","password":"A-long-enough-1!","marketing_consent":true}`,
+		""); rec.Code != http.StatusAccepted {
+		t.Fatalf("register status = %d", rec.Code)
+	}
+	// The row appears at verification, not at registration.
+	verifyNewestAccount(t, mux, st, "ticked@khodrobin.test")
+
 	rec := call(t, mux, http.MethodGet, "/api/auth/admin/summary", "", bearer(t, true))
 	var summary struct {
 		Counts store.Counts `json:"counts"`
@@ -427,11 +540,107 @@ func TestRegisterRecordsTheOptInEitherWay(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Counts.Users != 3 {
-		t.Fatalf("users = %d, want 3", summary.Counts.Users)
+	got := exportedEmails(t, mux)
+	if int(summary.Counts.SubscribersConfirmed) != len(got) {
+		t.Errorf("the dashboard says %d mailable and the export carries %d: %v",
+			summary.Counts.SubscribersConfirmed, len(got), got)
 	}
-	if summary.Counts.MarketingOptin != 1 {
-		t.Errorf("marketing_optin = %d, want only the account that ticked the box",
-			summary.Counts.MarketingOptin)
+	if len(got) != 2 {
+		t.Errorf("export = %v, want the confirmed subscriber and the register opt-in", got)
+	}
+	if int(summary.Counts.MarketingOptin) != 1 {
+		t.Fatalf("marketing_optin = %d, want 1", summary.Counts.MarketingOptin)
+	}
+	if int(summary.Counts.SubscribersConfirmed+summary.Counts.MarketingOptin) == len(got) {
+		t.Error("the two counts still look like disjoint lists worth adding together")
+	}
+}
+
+// The policy was enforced in the browser and nowhere else. usePasswordRules.ts
+// checked three rules and claimed the Go service checked them too; it checked
+// length. Anything posting straight at the endpoint bypassed the other two.
+func TestPasswordPolicyIsEnforcedServerSide(t *testing.T) {
+	for _, tc := range []struct {
+		name, pw string
+		wantOK   bool
+	}{
+		{"all three rules", "Passw0rd!x", true},
+		{"nine runes", "Passw0r!", false},
+		{"no symbol", "Password12", false},
+		{"no capital", "password1!", false},
+		{"persian symbol counts", "Passwordیک؟", true},
+		{"persian cannot satisfy uppercase", "رمزعبوردرازیک؟", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			problem := passwordProblem(tc.pw)
+			if (problem == "") != tc.wantOK {
+				t.Fatalf("passwordProblem(%q) = %q, want ok=%v", tc.pw, problem, tc.wantOK)
+			}
+		})
+	}
+}
+
+// Login must never gate on the policy: accounts predating it satisfy only the
+// length rule, the first admin account among them, and fixing that would need
+// the login they are being refused.
+func TestLoginStillAcceptsPrePolicyPasswords(t *testing.T) {
+	legacy := "averylongpassword"
+	if !validPassword(legacy) {
+		t.Fatal("login-side check rejected a password created under the old rules")
+	}
+	if passwordProblem(legacy) == "" {
+		t.Fatal("the setting-side check should refuse it, or the policy is not a policy")
+	}
+}
+
+// verifyNewestAccount drives the real verification route rather than flipping
+// the column, because the whole point of these tests is what happens ON that
+// route: the opt-in is recorded there and nowhere earlier.
+func verifyNewestAccount(t *testing.T, mux *http.ServeMux, st *store.Store, email string) {
+	t.Helper()
+	ctx := context.Background()
+	user, err := st.UserByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("no account for %s: %v", email, err)
+	}
+	secret, err := tokens.Secret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateToken(ctx, user.ID, "verify_email", tokens.Fingerprint(secret), time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	rec := call(t, mux, http.MethodGet, "/api/auth/verify?token="+secret, "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify gave %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// The sharpest form of the hole that registration-time opt-in opened: someone
+// starts a genuine double opt-in, and a stranger registers over it and
+// confirms it on their behalf.
+func TestRegistrationCannotConfirmSomeoneElsesPendingOptIn(t *testing.T) {
+	mux, st := testAPI(t)
+	const victim = "victim@khodrobin.test"
+
+	// The victim types their address into the newsletter box and never clicks.
+	if _, err := st.SubscribePending(context.Background(), victim,
+		tokens.Fingerprint("their-own-secret"), "landing"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A stranger registers with that address and the box ticked.
+	if rec := call(t, mux, http.MethodPost, "/api/auth/register",
+		`{"email":"`+victim+`","password":"A-long-enough-1!","marketing_consent":true}`,
+		""); rec.Code != http.StatusAccepted {
+		t.Fatalf("register status = %d", rec.Code)
+	}
+
+	if got := exportedEmails(t, mux); len(got) != 0 {
+		t.Errorf("export = %v: a pending opt-in was confirmed by somebody else's registration", got)
+	}
+	rows := listSubscribers(t, mux)
+	if len(rows) != 1 || rows[0].ConfirmedAt != nil {
+		t.Errorf("rows = %+v, want the victim's row still pending", rows)
 	}
 }

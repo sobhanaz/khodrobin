@@ -7,7 +7,7 @@ const f = useFormat()
 /**
  * Every figure here is read live from /api/v1/stats.
  *
- * A zero on this band is never a fact about the market — it is a fact about a
+ * A zero on this band is never a fact about the market; it is a fact about a
  * request that failed, or an index built before the field existed. So a
  * missing figure drops its own tile and an empty band removes itself: a proof
  * band reading «۰ آگهی» disproves the product it exists to prove.

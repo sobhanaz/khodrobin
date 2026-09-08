@@ -48,6 +48,23 @@ NOT_A_CAR_YET = ("حواله", "پیش فروش", "پیش‌فروش", "پیش �
 # rule that only ever runs where it was not needed.
 INSTALMENT = ("اقساط", "قسطی", "پیش پرداخت", "پیش‌پرداخت", "چک و سند")
 
+# «فروش دولتی» and «فروش سازمانی» — a Sheypoor speciality: 76 of the 960 rows
+# in the shipped crawl, and not one row in the other four sources. The ad quotes a figure
+# around a tenth of the market («قیمت‌ها ۵۰ درصد کمتر از بازار» is in the body)
+# and sends the buyer to an off-site form: «فروش دولتی پراید» at 107,000,000
+# tomans against a real Pride near 300,000,000, «فروش سازمانی شاهین» at
+# 846,000,000 against ~1.3 billion. Whatever that number is, it is not what the
+# car sells for, so it is not comparable with the rest of the cluster.
+#
+# Sheypoor publishes no price-type field the way Bama does — the whole Vehicle
+# payload is 18 keys and none of them says how the price is meant — so, exactly
+# like Divar's instalment ads, the title is the only place the fact is stated.
+#
+# Two-word phrases on purpose. Bare «سازمانی» also matches «خودروی سازمانی
+# بوده», which is an honest thing to say about a used car's history. In the
+# sample the phrase caught every row the bare word did.
+OFF_MARKET = ("فروش دولتی", "فروش سازمانی")
+
 
 def flags(car: dict) -> list[dict[str, str]]:
     """Return zero or more {code, message} findings for one canonical car."""
@@ -97,6 +114,15 @@ def flags(car: dict) -> list[dict[str, str]]:
                 "code": "instalment_price",
                 "message": ("این آگهی اقساطی است؛ عدد اعلام‌شده معمولاً پیش‌پرداخت است، "
                             "نه قیمت کامل خودرو، و با بقیه قابل مقایسه نیست."),
+            })
+            break
+
+    for phrase in OFF_MARKET:
+        if phrase.replace("\u200c", " ") in title:
+            found.append({
+                "code": "off_market_sale",
+                "message": ("این آگهی «فروش دولتی یا سازمانی» است؛ عدد اعلام‌شده قیمت "
+                            "خرید خودرو در بازار نیست و با آگهی‌های دیگر قابل مقایسه نیست."),
             })
             break
 

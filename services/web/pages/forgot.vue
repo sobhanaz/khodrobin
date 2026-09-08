@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'بازیابی رمز — خودروبین', robots: 'noindex' })
+useSeoMeta({ title: 'بازیابی رمز خودروبین', robots: 'noindex' })
 
 const route = useRoute()
 // Prefilled from the login page, so nobody retypes an address they just typed.
@@ -55,7 +55,7 @@ async function submit() {
         :error="emailError"
         required
         autofocus
-        @blur="touched = true"
+        @focusout="touched = true"
       />
 
       <button
@@ -63,10 +63,10 @@ async function submit() {
         :disabled="sending"
         class="min-h-[48px] rounded-xl bg-accent px-5 font-bold text-white transition
                enabled:hover:brightness-110 disabled:opacity-50
-               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >{{ sending ? 'در حال ارسال…' : 'ارسال لینک بازیابی' }}</button>
 
-      <p class="text-center text-[.85rem] text-ink-3">
+      <p class="text-center text-[.85rem] text-ink-2">
         یادت آمد؟ <NuxtLink to="/login" class="text-accent hover:underline">برگرد به ورود</NuxtLink>
       </p>
     </form>

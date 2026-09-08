@@ -56,7 +56,7 @@ func TestVerifyCarriesTheCode(t *testing.T) {
 }
 
 func TestWelcomeNamesTheNewCapabilities(t *testing.T) {
-	subject, body := Welcome("https://khodrobin.noxioai.com/")
+	subject, body := Welcome("https://khodrobin.noxioai.com/", "")
 	if !strings.Contains(subject, "خوش آمدی") {
 		t.Errorf("subject does not welcome: %s", subject)
 	}
@@ -142,7 +142,7 @@ func TestEveryMailCarriesPreheaderFallbackAndColorScheme(t *testing.T) {
 		{"reset", mustBody(Reset("https://x.test/r?t=abc"))},
 		{"subscribe", mustBody(ConfirmSubscription("https://x.test/s?t=abc", "https://x.test/u?t=abc"))},
 		{"price", mustBody(PriceAlert("پژو ۲۰۶", "ارزون‌ترین پژو ۲۰۶", 1_000_000_000, 900_000_000, "https://x.test/"))},
-		{"welcome", mustBody(Welcome("https://x.test/"))},
+		{"welcome", mustBody(Welcome("https://x.test/", "https://x.test/unsubscribe?token=t"))},
 		{"password", mustBody(PasswordChanged("https://x.test/login", "https://x.test/forgot"))},
 		{"saved", mustBody(SavedSearchCreated("پژو ۲۰۶", 10, "https://x.test/?q=x"))},
 	}
@@ -166,3 +166,25 @@ func TestCommaGrouping(t *testing.T) {
 }
 
 var _ = io.Discard
+
+// The opt-out token reaches the person here or nowhere. The subscriber row is
+// written at verification and the secret is not stored in recoverable form, so
+// a welcome mail that dropped this link would leave an address on the list with
+// no way off it. That was the state this replaced.
+func TestWelcomeCarriesTheMarketingOptOutOnlyWhenThereIsOne(t *testing.T) {
+	_, withOptIn := Welcome("https://khodrobin.noxioai.com/",
+		"https://khodrobin.noxioai.com/unsubscribe?token=abc123")
+	if !strings.Contains(withOptIn, "unsubscribe?token=abc123") {
+		t.Error("welcome mail dropped the opt-out link, stranding the address on the list")
+	}
+	if !strings.Contains(withOptIn, "لغو خبرنامه") {
+		t.Error("the opt-out link has no label a reader would recognise")
+	}
+
+	// Someone who left the box alone is on no list, and offering to remove them
+	// from one invites the reply that they never signed up.
+	_, without := Welcome("https://khodrobin.noxioai.com/", "")
+	if strings.Contains(without, "لغو خبرنامه") {
+		t.Error("offered to unsubscribe someone who never opted in")
+	}
+}

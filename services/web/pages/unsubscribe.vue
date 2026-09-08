@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'لغو اشتراک — خودروبین', robots: 'noindex' })
+useSeoMeta({ title: 'لغو اشتراک | خودروبین', robots: 'noindex' })
 
 const route = useRoute()
 const state = ref<'working' | 'ok' | 'failed'>('working')
@@ -7,7 +7,7 @@ const message = ref('')
 
 // It unsubscribes on mount, with no confirm step. Someone who clicked
 // «لغو اشتراک» in an email has already decided; an "are you sure?" here does
-// not win the address back, it converts a quiet opt-out into a spam report —
+// not win the address back, it converts a quiet opt-out into a spam report,
 // and a spam report costs the whole sending domain, including the price alerts
 // people did ask for.
 onMounted(async () => {
@@ -43,9 +43,9 @@ onMounted(async () => {
 
       <!-- The way back is on the page. In most mail clients the unsubscribe
            link sits a few pixels from the one people meant to click, so an
-           accidental opt-out is common — and making them hunt for the signup
+           accidental opt-out is common, and making them hunt for the signup
            box again is how it turns into a permanent one. -->
-      <p class="mt-5 border-t border-good/20 pt-4 text-[.82rem] leading-7 text-ink-3">
+      <p class="mt-5 border-t border-good/20 pt-4 text-[.82rem] leading-7 text-ink-2">
         اشتباهی کلیک کردی؟
         <NuxtLink to="/" class="text-accent hover:underline">از صفحه‌ی اصلی دوباره عضو شو</NuxtLink>.
       </p>
@@ -56,7 +56,8 @@ onMounted(async () => {
       <p class="mt-2 text-[.88rem] leading-8 text-ink-2">
         آدرس را کامل از ایمیل کپی کن. اگر باز هم کار نکرد و ایمیل می‌گیری، به ما بگو تا دستی حذفت کنیم.
       </p>
-      <NuxtLink to="/contact" class="mt-4 inline-block text-[.85rem] text-accent hover:underline">
+      <NuxtLink to="/contact" class="mt-4 inline-flex min-h-[44px] items-center text-[.85rem] text-accent hover:underline
+                              focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
         تماس با ما
       </NuxtLink>
     </div>

@@ -28,8 +28,15 @@ DEFAULT_CITIES = ["tehran", "mashhad", "isfahan", "shiraz", "tabriz"]
 # and neighbourhood-level locations we have no use for is exactly what decision
 # ۷ says this project does not do. Collect what the product needs; drop the rest
 # at the door rather than carrying it forever.
-DROP_FIELDS = ("vehicleIdentificationNumber",)
-DROP_NESTED = {"web_info": ("district_persian",)}
+# `description` is the seller's free text. Nothing in the crawler, the API or
+# the explainer reads it, and 29 of 960 Sheypoor descriptions and 5 of 931 Bama
+# ones carry a phone number — personal data, in a public repo, for a field no
+# code path opens. It is also 23% of a Sheypoor row's bytes.
+DROP_FIELDS = ("vehicleIdentificationNumber", "description")
+DROP_NESTED = {"web_info": ("district_persian",),
+               # Bama ships the seller text twice: once as detail.description
+               # and again inside the page's SEO metadata.
+               "detail": ("description",), "metadata": ("description",)}
 
 
 def scrub(payload: dict) -> dict:
