@@ -2,21 +2,23 @@
 
 *Last updated: 8 Sep 2026. Target submission: 20 Sep 2026.*
 
+> Every number in the **Live numbers** section below was read from the live API while writing
+> this. Numbers elsewhere in this file predate that check unless they say otherwise.
+
 ---
 
 ## The one-paragraph state
 
-**خودروبین is live at <https://khodrobin.noxioai.com>.** Five services on one box: a Python crawler over four Iranian marketplaces, a Go search API, a FastAPI model layer with a five-axis hallucination guard, a Go accounts service, and a server-rendered Nuxt front end in Persian RTL. Everything ships from GitHub — push to `main` → build → GHCR → deploy → smoke test. Four of the five rubric lines are implemented and deployed; the demo video is the one that remains.
+**خودروبین is live at <https://khodrobin.noxioai.com>.** Five services on one box: a Python crawler over **five** Iranian marketplaces, a Go search API, a FastAPI model layer with a five-axis hallucination guard, a Go accounts service, and a server-rendered Nuxt front end in Persian RTL. Everything ships from GitHub — push to `main` → build → GHCR → deploy → smoke test. Four of the five rubric lines are implemented and deployed; the demo video is the one that remains.
 
 ---
 
 ## Latest session — 8 Sep 2026: email templates, OTP, and the agreed plan to win
 
-> **For the next agent (Claude or whoever picks this up):** this session
-> redesigned every transactional email, added three new ones, and added a
-> verification-code (OTP) flow. All of it is **uncommitted** — it sits in the
-> working tree next to the rest of the in-flight work (Sheypoor source,
-> newsletter, landing redesign). Verify before building on it.
+> **Status corrected 8 Sep, later the same day.** This section described the email, OTP,
+> Sheypoor, newsletter and landing work as uncommitted. It is now all committed and deployed
+> (`0bddb1c` and earlier), and the working tree is clean. The five defects an adversarial review
+> found in the subscribe flow are fixed; see **Bugs worth re-telling** items 12 and 13.
 
 ### What changed
 
@@ -199,14 +201,22 @@ partitioning, tracing/OpenTelemetry, CDN, read-only rootfs is built not written.
 
 ## Live numbers
 
+Read from [`/api/v1/stats`](https://khodrobin.noxioai.com/api/v1/stats) on 8 Sep, not carried
+forward from a previous version of this file:
+
 ```
-captured 10,516  →  duplicates collapsed 4,175 (40%)  →  unique 6,341
-indexed 3,560 offers  →  2,286 specs  →  310 multi-source  →  26 flagged
-sources: divar · bama · hamrah-mechanic · khodro45
-search: parse ~0.01ms · rank ~1.4ms
-eval: 90/92 golden queries, 0 model calls
-tests: 106 across five services
+captured 24,684  →  duplicates collapsed 11,094 (45%)  →  unique 13,590
+indexed 7,591 offers  →  4,209 specs  →  842 multi-source  →  285 flagged
+resolved by rules: 55.9%
+sources: divar · bama · hamrah-mechanic · khodro45 · sheypoor
+explanations warmed: 144
+tests: 50 crawler · 33 AI guard · 4 Go auth packages · 3 Go api packages
 ```
+
+Two of those moved sharply and both have a cause worth knowing. **Sheypoor** is now in the source
+list, which is most of the jump in captured rows. **Flagged went from 26 to 285**, which is the
+instalment-listing flag landing rather than a decline in data quality: «فروش اقساطی» quotes a down
+payment, and 49 such listings had been leading their cards as the cheapest offer.
 
 Verify at [`/api/v1/stats`](https://khodrobin.noxioai.com/api/v1/stats) and `/readyz`.
 
@@ -248,6 +258,18 @@ Pages: `/`, `/about`, `/faq`, `/contact`, `/login`, `/register`, `/verify`, `/ac
 
 ## Open items
 
+**0. The price-alert checkbox on `/account` does nothing.** Verified rather than assumed:
+`alerts_sent` is never written by any code, `last_median` appears in exactly one `SELECT` and is
+never written, and no scheduler exists. The UI now says so instead of promising it. Wiring it up
+is roughly half a day and completes the accounts story, which is the only justification the auth
+service has: a ticker in the auth service re-runs alerting searches each crawl cycle, compares
+medians, writes `alerts_sent`, and mails the difference. «پیگیری قیمت» is on Torob's own product,
+so this is rubric surface, not a nice-to-have.
+
+**0b. No Kubernetes exists.** Verified on the box: no kubectl, no k3s, no kubelet; `containerd` is
+present only as Docker's runtime. Nine containers under Docker Compose on one host. Any monitoring
+work should target Docker and the host, not pods.
+
 **1. No admin account exists yet.** Registration creates ordinary users; `is_admin` defaults to false, deliberately — there is no self-promotion path in the code. To grant it after registering and verifying:
 
 ```sql
@@ -270,7 +292,7 @@ UPDATE users SET is_admin = TRUE WHERE email = 'sobhandevuk@gmail.com';
 > moment now comes first because the video needs it to exist.
 
 ### 1. The demo video — the only unmet rubric line
-Shot list is in [`docs/ROADMAP.md`](./docs/ROADMAP.md) §19. Everything it needs to show now exists. The strongest sequence, in order: one car across four marketplaces → the messy Persian query parsed → `make eval` in a terminal → the guard rejecting a real model output live.
+Shot list is in [`docs/ROADMAP.md`](./docs/ROADMAP.md) §19. Everything it needs to show now exists. The strongest sequence, in order: one car across five marketplaces → the messy Persian query parsed → `make eval` in a terminal → the guard rejecting a real model output live.
 
 ### 2. Re-audit before recording
 Adversarial passes over the guard, the live UX, the data fixes, and the eval methodology. Every previous round found something real that self-review had missed.
@@ -294,6 +316,12 @@ Each one passed every check while being broken. That is the point of the story: 
 8. **A flagged outlier still led the card.** A «حواله» listing at 82% under its cohort was detected, tagged — and still shown first, and still handed to the model to justify.
 9. **The guard passed a sentence that was true and meaningless.** «کارکرد صفر کیلومتر را از دست می‌دهی» — *you lose the zero kilometres* — cleared all four factual axes because every number in it was correct. 10% of live explanations framed the top offer's best feature as a sacrifice.
 10. **Tightening the guard changed nothing.** Both caches key on the data, so 149 warm explanations survived a rule change that would now reject 13 of them. `PROMPT_VERSION` had sat at `"1"` through a dozen prompt and guard edits — the safety mechanism was a constant someone had to remember, and nobody ever had.
+11. **Instalment listings were priced as cars.** «فروش اقساطی» quotes a down payment, not the price of a car. 76 of them in the live index, and **49 were the cheapest offer on their card** — leading the result and being handed to the model as the choice to justify. The cause was an asymmetry, not a missing phrase: Bama declares instalment sales in a *field* and normalize.py has dropped them since the first crawl; Divar declares it only in free text and nothing looked. The check existed precisely where the data was already clean.
+12. **A hover panel clipped a price to «۰,۰۰۰ تومان».** `position: fixed` is relative to the viewport only while no ancestor carries a transform, and `SpecCard` has `hover:-translate-y-0.5` — so hovering a source badge made the card the containing block at exactly the moment the panel opened. Correct coordinates, resolved against the wrong box. A layout bug was hiding a data bug: the instalment listing above had been leading cards for as long as Divar had been crawled, and nobody could see it because the panel that would have shown it rendered 588px off-screen.
+13. **Registration confirmed addresses nobody owned.** The marketing opt-in was acted on immediately after the account row was written, before any verification click, so registering with a stranger's address and the box ticked put that address into the mailable export marked confirmed — and could confirm a pending double opt-in somebody else had genuinely started. **The hole had a passing test defending it**, asserting the vulnerable behaviour as the specification. Rewriting that test was the fix; making it pass would have been the bug.
+14. **A password policy that was only a suggestion.** The browser checked ten runes, a symbol and a capital. The Go service checked length. Anything posting straight at the API got one rule out of three — beneath a comment claiming the server enforced all three independently.
+
+**The recurring shape, now seen five times:** a comment asserting a check the code does not perform. The price-outlier flag that changed no behaviour, `PROMPT_VERSION = "1"`, the warm cache's carry-forward loop, `counts.mailable` reading a key the API has never emitted, and the password rules. None of them errored. All of them read as true.
 
 ---
 
