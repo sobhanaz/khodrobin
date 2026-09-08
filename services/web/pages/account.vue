@@ -110,9 +110,9 @@ const dt = 'mt-3 text-ink-2 first:mt-0 sm:mt-0'
         />
 
         <div class="grid gap-2 rounded-xl border border-white/[.07] bg-bg-2 p-4">
-          <!-- The control names the setting; the note underneath states what it
-               actually does today. Naming the checkbox after the email it would
-               send was the page promising a job nothing on the server runs. -->
+          <!-- The checkbox arms a real watcher now. It is named after what it
+               does rather than after the mail it sends, because the mail only
+               arrives when the price actually moves. -->
           <label class="flex min-h-11 items-center gap-3 text-[.9rem]">
             <input
               v-model="form.alert"
@@ -124,9 +124,15 @@ const dt = 'mt-3 text-ink-2 first:mt-0 sm:mt-0'
             <span>هشدار تغییر قیمت</span>
           </label>
 
+          <!-- This said the threshold was saved but no mail would be sent,
+               which was true and is not any more: the watcher now re-runs the
+               search every three hours and mails when the median moves past the
+               threshold. The copy has to move with the feature, or the page goes
+               on apologising for something that works. -->
           <p id="alert-note" class="text-[.8rem] leading-7 text-ink-2">
             <template v-if="!user?.verified">اول باید ایمیلت را تأیید کنی. </template>
-            آستانه ذخیره می‌شود، ولی ارسال خودکار ایمیل هنوز راه نیفتاده است.
+            هر ۳ ساعت جست‌وجویت دوباره اجرا می‌شود و اگر میانه‌ی قیمت بیشتر از این آستانه
+            جابه‌جا شود، ایمیل می‌گیری.
           </p>
 
           <div v-if="form.alert" class="mt-1 flex items-center gap-3">

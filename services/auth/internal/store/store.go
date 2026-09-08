@@ -651,3 +651,92 @@ func (s *Store) Counts(ctx context.Context) (*Counts, error) {
 	}
 	return &c, nil
 }
+
+// --- price alerts ---------------------------------------------------------
+
+// AlertingSearch is one saved search that has asked to be watched, joined to
+// the address the alert would go to.
+type AlertingSearch struct {
+	ID         int64
+	UserID     int64
+	Email      string
+	Label      *string
+	Query      string
+	Mode       string
+	AlertPct   float64
+	LastMedian *int64
+}
+
+// DueAlerts returns saved searches with an alert threshold, for verified
+// accounts only.
+//
+// The verified filter is the whole reason arming an alert requires a confirmed
+// address: without it, saving a search with somebody else's email would make
+// this product a way to mail strangers on a schedule. The partial index on
+// alert_pct makes this cheap regardless of how many searches exist.
+func (s *Store) DueAlerts(ctx context.Context, limit int) ([]AlertingSearch, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT ss.id, ss.user_id, u.email, ss.label, ss.query, ss.mode,
+		        ss.alert_pct, ss.last_median
+		   FROM saved_searches ss
+		   JOIN users u ON u.id = ss.user_id
+		  WHERE ss.alert_pct IS NOT NULL
+		    AND u.verified_at IS NOT NULL
+		  ORDER BY ss.last_run_at NULLS FIRST
+		  LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("due alerts: %w", err)
+	}
+	defer rows.Close()
+	out := []AlertingSearch{}
+	for rows.Next() {
+		var a AlertingSearch
+		if err := rows.Scan(&a.ID, &a.UserID, &a.Email, &a.Label, &a.Query,
+			&a.Mode, &a.AlertPct, &a.LastMedian); err != nil {
+			return nil, fmt.Errorf("scan alert: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// MarkAlertRun records the median this search saw, whether or not it mailed.
+//
+// Writing the median even when nothing was sent is what stops a slow drift from
+// accumulating into one dramatic alert: each run compares against the last
+// observation, not against whatever the price was when the search was saved.
+func (s *Store) MarkAlertRun(ctx context.Context, searchID, median int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE saved_searches SET last_run_at = now(), last_median = $2 WHERE id = $1`,
+		searchID, median)
+	if err != nil {
+		return fmt.Errorf("mark alert run: %w", err)
+	}
+	return err
+}
+
+// RecordAlert writes the alert and refuses to write the same movement twice.
+//
+// Returns false when this exact spec and new median has already been mailed for
+// this search, which is the guard against a price oscillating across the
+// threshold and mailing on every cycle. The caller sends only when this
+// returns true, so the record is what authorises the mail rather than a log of
+// one already sent.
+func (s *Store) RecordAlert(ctx context.Context, searchID int64, specKey string, oldMedian, newMedian int64) (bool, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO alerts_sent (saved_search_id, spec_key, old_median, new_median)
+		 SELECT $1, $2, $3, $4
+		  WHERE NOT EXISTS (
+		        SELECT 1 FROM alerts_sent
+		         WHERE saved_search_id = $1 AND spec_key = $2 AND new_median = $4
+		           AND sent_at > now() - interval '7 days')
+		 RETURNING id`, searchID, specKey, oldMedian, newMedian).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("record alert: %w", err)
+	}
+	return true, nil
+}

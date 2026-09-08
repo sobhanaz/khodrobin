@@ -296,7 +296,7 @@ func PriceAlert(carName, query string, oldMedian, newMedian int64, link string) 
 </div>`,
 		}, ""),
 	)
-	return fmt.Sprintf("%s: %s قیمت — خودروبین", carName, dir), body
+	return fmt.Sprintf("%s: %s قیمت | خودروبین", carName, dir), body
 }
 
 // comma groups thousands. Prices are long, and an unbroken run of ten digits is

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sobhanaz/khodrobin/auth/internal/alerts"
 	"github.com/sobhanaz/khodrobin/auth/internal/handlers"
 	"github.com/sobhanaz/khodrobin/auth/internal/mail"
 	"github.com/sobhanaz/khodrobin/auth/internal/store"
@@ -67,10 +68,32 @@ func main() {
 	mux := http.NewServeMux()
 	api.Routes(mux)
 
+	// The watcher re-runs saved searches against the search service. Default
+	// matches the compose network; the interval is longer than the 3h crawl
+	// because running more often than the data changes cannot find anything.
+	searchAPI := os.Getenv("KHODROBIN_API_URL")
+	if searchAPI == "" {
+		searchAPI = "http://api:8080"
+	}
+	alertEvery := 3 * time.Hour
+	if v := os.Getenv("ALERT_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			alertEvery = d
+		}
+	}
+
 	addr := os.Getenv("AUTH_ADDR")
 	if addr == "" {
 		addr = ":8081"
 	}
+	// Price alerts. The schema for this shipped on day one and the runtime did
+	// not, so the checkbox on the account page saved a row and nothing ever
+	// arrived. Cancelled with the same context as the server.
+	alertCtx, stopAlerts := context.WithCancel(context.Background())
+	defer stopAlerts()
+	go alerts.New(st, mailer, searchAPI, baseURL, log).Start(alertCtx, alertEvery)
+	log.Info("price alerts armed", "api", searchAPI, "every", alertEvery)
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
