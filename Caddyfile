@@ -32,6 +32,23 @@
 	handle /readyz {
 		reverse_proxy api:8080
 	}
+	# A deploy nobody can see is a deploy that did not happen.
+	#
+	# Nuxt marks its hashed bundles immutable for a year, which is right: the
+	# filename changes when the contents do. The HTML document carried NO
+	# Cache-Control at all, so browsers fell back to heuristic caching and kept
+	# serving the previous document — which references the previous bundle
+	# names, and those really are cached for a year. One missing header on one
+	# response meant a visitor could sit on an entire old version of the site
+	# indefinitely, while the server had been correct since the deploy landed.
+	#
+	# no-cache does not mean "do not store"; it means "revalidate before use",
+	# so the document is still cheap on a repeat visit and never stale.
+	@html {
+		not path /_nuxt/* /fonts/* /favicon.svg /apple-touch-icon.png /og.png
+	}
+	header @html Cache-Control "no-cache"
+
 	handle {
 		reverse_proxy web:3000
 	}
