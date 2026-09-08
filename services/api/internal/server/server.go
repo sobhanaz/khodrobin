@@ -4,6 +4,7 @@ package server
 import (
 	"embed"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sobhanaz/khodrobin/api/internal/index"
+	"github.com/sobhanaz/khodrobin/api/internal/lookup"
 	"github.com/sobhanaz/khodrobin/api/internal/search"
 )
 
@@ -37,6 +39,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/search", s.handleSearch)
+	s.mux.HandleFunc("POST /api/v1/lookup", s.handleLookup)
 	s.mux.HandleFunc("GET /api/v1/specs/{key...}", s.handleSpec)
 	s.mux.HandleFunc("GET /api/v1/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/v1/explain/{key...}", s.handleExplain)
@@ -103,6 +106,53 @@ func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "spec not found"})
+}
+
+// handleLookup answers the reverse question: given a listing URL, where else
+// is this car being sold, and is the pasted one the expensive copy?
+//
+// It is POST with the URL in a JSON body rather than GET with a query param,
+// because a listing URL pasted into an access log or a referrer header is a
+// URL that belongs to somebody's ad; the body keeps it out of both.
+func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid_json", "message_fa": "درخواست نامعتبر است.",
+		})
+		return
+	}
+
+	source, id, err := lookup.Parse(body.URL)
+	if err != nil {
+		// Unknown-host and known-host-but-wrong-shape are different mistakes:
+		// one needs "we only know these five sites", the other needs "this is
+		// not an ad page". Both are 422 — the request is well-formed, the
+		// content is not usable.
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"error":      "unknown_listing_url",
+			"message_fa": "این نشانی را نمی‌شناسم. لینک آگهی را از یکی از این سایت‌ها بفرست: دیوار، باما، همراه‌مکانیک، خودرو۴۵ یا شیپور.",
+		})
+		return
+	}
+
+	idx := s.store.Get()
+	res := lookup.Find(idx, source, id)
+	if res == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error":      "not_in_index",
+			"message_fa": "این آگهی توی نمایه‌ی من نیست — یا تازه آگهی شده، یا حذفش کرده‌اند، یا دور بعدی خزیده می‌شود.",
+		})
+		return
+	}
+
+	ms := time.Since(start).Seconds() * 1000
+	s.log.Info("lookup.served", "source", source, "id", id,
+		"spec", res.Spec.Key, "other_sources", res.OtherSources, "total_ms", ms)
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {

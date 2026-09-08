@@ -63,7 +63,7 @@ onMounted(load)
 const provenance = computed(() => {
   switch (data.value?.source) {
     case 'llm': return { label: 'نوشته‌ی مدل', tone: 'text-good border-good/30 bg-good/[.12]' }
-    case 'fallback': return { label: 'متن قالبی — پاسخ مدل رد شد', tone: 'text-warn border-warn/25 bg-warn/[.12]' }
+    case 'fallback': return { label: 'متن قالبی، پاسخ مدل رد شد', tone: 'text-warn border-warn/25 bg-warn/[.12]' }
     case 'budget_exceeded': return { label: 'سقف هزینه‌ی روزانه', tone: 'text-warn border-warn/25 bg-warn/[.12]' }
     default: return { label: 'مدل در دسترس نیست', tone: 'text-ink-3 border-white/[.12] bg-surface-2' }
   }

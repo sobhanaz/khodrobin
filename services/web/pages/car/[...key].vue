@@ -33,7 +33,7 @@ const heading = computed(() => {
  * which is exactly what made them readable when this project crawled them.
  */
 useSeoMeta({
-  title: () => `قیمت ${heading.value} — خودروبین`,
+  title: () => `قیمت ${heading.value} | خودروبین`,
   description: () => spec.value
     ? `میانه‌ی قیمت ${heading.value} بر اساس ${f.fa(spec.value.offer_count)} آگهی از `
       + `${f.fa(spec.value.source_count)} منبع: ${f.money(spec.value.median_price)} تومان. `

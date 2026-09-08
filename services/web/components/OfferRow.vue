@@ -13,10 +13,10 @@ const f = useFormat()
       </span>
       <span class="min-w-0 truncate text-[.86rem] text-ink-2">
         <a :href="offer.url" target="_blank" rel="noopener noreferrer" class="hover:text-ink">
-          {{ offer.title || '—' }}
+          {{ offer.title || 'بدون عنوان' }}
         </a>
         <span class="text-[.76rem] text-ink-3">
-          · {{ offer.mileage_km == null ? '—' : `${f.money(offer.mileage_km)} km` }}
+          · {{ offer.mileage_km == null ? 'کارکرد نامشخص' : `${f.money(offer.mileage_km)} km` }}
           <template v-if="offer.city"> · {{ offer.city }}</template>
         </span>
       </span>

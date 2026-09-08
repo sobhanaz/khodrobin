@@ -61,9 +61,12 @@ const links = [
 
         <button
           type="button"
-          class="rounded-lg border border-white/[.12] p-2 md:hidden"
+          class="grid size-11 place-items-center rounded-lg border border-white/[.12] md:hidden
+                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+                 focus-visible:outline-focus"
           :aria-expanded="open"
-          aria-label="منو"
+          :aria-label="open ? 'بستن منو' : 'باز کردن منو'"
+          aria-controls="mobile-nav"
           @click="open = !open"
         >
           <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2">
@@ -72,13 +75,16 @@ const links = [
         </button>
       </div>
 
-      <div v-if="open" class="border-t border-white/[.07] px-5 py-3 md:hidden">
+      <!-- Every row in the drawer is a full-width 44px target. A navigation menu
+           on a phone is the one place where a mis-tap costs the most: it sends
+           you to the wrong page and you have to come back. -->
+      <div v-if="open" id="mobile-nav" class="border-t border-white/[.07] px-5 py-2 md:hidden">
         <NuxtLink v-for="l in links" :key="l.to" :to="l.to"
-          class="block py-2 text-[.9rem] text-ink-2">{{ l.label }}</NuxtLink>
-        <div class="mt-2 flex gap-2 border-t border-white/[.07] pt-3">
+          class="flex min-h-[44px] items-center text-[.9rem] text-ink-2">{{ l.label }}</NuxtLink>
+        <div class="mt-1 flex gap-4 border-t border-white/[.07] pt-2">
           <template v-if="isLoggedIn">
-            <NuxtLink to="/account" class="text-[.9rem] text-ink-2">حساب من</NuxtLink>
-            <button type="button" class="text-[.9rem] text-ink-3" @click="logout()">خروج</button>
+            <NuxtLink to="/account" class="flex min-h-[44px] items-center text-[.9rem] text-ink-2">حساب من</NuxtLink>
+            <button type="button" class="min-h-[44px] text-[.9rem] text-ink-3" @click="logout()">خروج</button>
           </template>
           <template v-else>
             <NuxtLink to="/login" class="text-[.9rem] text-ink-2">ورود</NuxtLink>

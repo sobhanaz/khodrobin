@@ -30,7 +30,7 @@ const heading = computed(() => {
   const name = [s.brand_fa, s.model_fa].filter(Boolean).join(' ')
   const trim = s.trim ? ` · ${s.trim}` : ''
   const gearbox = s.gearbox_fa ? ` · ${s.gearbox_fa}` : ''
-  return `${name}${trim} — مدل ${f.year(s.year)}${gearbox}`
+  return `${name}${trim} · مدل ${f.year(s.year)}${gearbox}`
 })
 
 const mileageBand = computed(() => {
@@ -58,7 +58,7 @@ const mileageBand = computed(() => {
           <NuxtLink :to="`/car/${spec.key}`" class="transition hover:text-accent">{{ heading }}</NuxtLink>
         </h3>
 
-        <div class="mt-2 flex flex-wrap gap-1.5">
+        <div class="mt-2 flex flex-wrap gap-2.5">
           <span class="rounded-md border border-white/[.07] bg-surface-2 px-2 py-0.5 text-[.74rem] text-ink-2">
             {{ f.fa(spec.offer_count) }} آگهی
           </span>
@@ -73,7 +73,7 @@ const mileageBand = computed(() => {
           </span>
         </div>
 
-        <div class="mt-2 flex flex-wrap gap-1.5">
+        <div class="mt-2 flex flex-wrap gap-2.5">
           <SourceBadge
             v-for="s in ALL_SOURCES"
             :key="s"
@@ -99,7 +99,7 @@ const mileageBand = computed(() => {
     <div class="flex flex-wrap gap-2 px-5 pb-4">
       <button
         type="button"
-        class="rounded-full border px-3.5 py-1.5 text-[.78rem] transition"
+        class="min-h-[44px] rounded-full border px-3.5 text-[.78rem] transition"
         :class="open === 'why'
           ? 'border-accent/35 bg-accent/[.12] text-accent'
           : 'border-white/[.07] bg-surface-2 text-ink-2 hover:text-ink hover:border-white/[.12]'"
@@ -108,7 +108,7 @@ const mileageBand = computed(() => {
       >چرا این؟</button>
       <button
         type="button"
-        class="rounded-full border px-3.5 py-1.5 text-[.78rem] transition"
+        class="min-h-[44px] rounded-full border px-3.5 text-[.78rem] transition"
         :class="open === 'offers'
           ? 'border-accent/35 bg-accent/[.12] text-accent'
           : 'border-white/[.07] bg-surface-2 text-ink-2 hover:text-ink hover:border-white/[.12]'"
@@ -117,7 +117,7 @@ const mileageBand = computed(() => {
       >{{ f.fa(spec.offer_count) }} آگهی</button>
       <button
         type="button"
-        class="rounded-full border px-3.5 py-1.5 text-[.78rem] transition"
+        class="min-h-[44px] rounded-full border px-3.5 text-[.78rem] transition"
         :class="open === 'backstage'
           ? 'border-accent/35 bg-accent/[.12] text-accent'
           : 'border-white/[.07] bg-surface-2 text-ink-2 hover:text-ink hover:border-white/[.12]'"
@@ -141,7 +141,7 @@ const mileageBand = computed(() => {
 
           <template v-else-if="open === 'backstage'">
             <p class="mb-2 font-mono text-[.68rem] uppercase tracking-wider text-ink-3">
-              امتیاز رتبه‌بندی — مجموع {{ spec.score.toFixed(3) }}
+              امتیاز رتبه‌بندی، مجموع {{ spec.score.toFixed(3) }}
             </p>
             <ScoreBars :spec="spec" />
 

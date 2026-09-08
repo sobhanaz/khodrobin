@@ -110,7 +110,7 @@ const freshness = computed(() => {
       class="inline-flex items-center gap-1 rounded-full border border-good/30 bg-good/[.12] px-2.5 py-0.5
              text-[.7rem] text-good transition hover:border-good/60 hover:bg-good/20
              focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-good"
-      :aria-label="`${label} — ${f.money(best!.price)} تومان، باز کردن آگهی در تب جدید`"
+      :aria-label="`${label}، ${f.money(best!.price)} تومان، باز کردن آگهی در تب جدید`"
       @focus="show"
       @blur="hide"
     >

@@ -40,7 +40,7 @@ const show = computed(() => props.password.length > 0)
           aria-hidden="true"
         >{{ r.ok ? '✓' : '' }}</span>
         <span>{{ r.label }}</span>
-        <span class="sr-only">{{ r.ok ? '— انجام شد' : '— هنوز نه' }}</span>
+        <span class="sr-only">{{ r.ok ? '، انجام شد' : '، هنوز نه' }}</span>
       </li>
     </ul>
 
@@ -53,7 +53,7 @@ const show = computed(() => props.password.length > 0)
       v-if="!enforcing && !satisfied"
       class="mt-2 rounded-lg border border-white/[.08] bg-surface-2/60 px-3 py-2 text-[.74rem] leading-6 text-ink-3"
     >
-      رمزهای قدیمی‌تر همچنان کار می‌کنند — این فقط اطلاع‌رسانی است.
+      رمزهای قدیمی‌تر همچنان کار می‌کنند. این فقط اطلاع‌رسانی است.
       <NuxtLink to="/forgot" class="text-ink-2 underline underline-offset-2 hover:text-ink">
         می‌خواهی رمز قوی‌تری بگذاری؟
       </NuxtLink>
