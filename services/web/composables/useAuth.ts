@@ -95,11 +95,15 @@ export function useAuth() {
     }
   }
 
-  async function register(email: string, password: string, name?: string) {
+  async function register(email: string, password: string, name?: string, marketingConsent = false) {
     pending.value = true; error.value = null
     try {
+      // The flag is always sent, including when it is false. An omitted field
+      // and a declined one look identical on the wire, and the day someone asks
+      // where a marketing address came from, "we never sent a no" is not an
+      // answer — the refusal is the half of the record worth having.
       const res = await $fetch<{ message: string }>(apiUrl('/api/auth/register'), {
-        method: 'POST', body: { email, password, ...(name ? { name } : {}) },
+        method: 'POST', body: { email, password, marketing_consent: marketingConsent, ...(name ? { name } : {}) },
       })
       return res.message
     } catch (e: any) {

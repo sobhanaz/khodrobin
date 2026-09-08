@@ -127,3 +127,129 @@ def test_unused_identifiers_never_reach_storage():
     # City stays: it is shown to the user and is what "where is this car" means.
     assert cleaned["web_info"]["city_persian"] == "تهران"
     assert cleaned["offers"]["price"] == "3100000000"
+
+
+# --- Sheypoor ---------------------------------------------------------------
+#
+# Payloads below are verbatim from https://www.sheypoor.com/s/tehran/car, cut
+# down to the fields the adapter reads.
+
+def test_sheypoor_rials_reconcile_with_the_other_sources():
+    # The whole reason this is a test and not a comment: Sheypoor labels its
+    # price «IRR» and Bama labels nothing, and neither label is why we know.
+    # A 1384 Pride quoted at 4,100,000,000 here sits beside a live 1385 Pride
+    # at 310,000,000 tomans on Bama. Divided by ten they are the same car at
+    # the same money; taken as tomans, Sheypoor is asking four billion tomans
+    # for a forty-year-old Pride.
+    pride84 = n.from_sheypoor({
+        "name": "پراید84 خیلی خیلی خیلی تمیز",
+        "brand": {"name": "پراید"},
+        "vehicleModelDate": "1384",
+        "offers": {"priceCurrency": "IRR", "Price": 4_100_000_000, "sku": 1},
+        "mileageFromOdometer": {"value": "433000"},
+    })
+    assert pride84["price_toman"] == 410_000_000
+    assert 300_000_000 <= pride84["price_toman"] <= 600_000_000
+
+
+def test_sheypoor_price_key_is_capital_p():
+    # schema.org spells it `price`; Sheypoor ships `Price` and omits the
+    # lowercase key entirely. Reading the standard key gives None for every
+    # listing, build_index drops every priceless row, and the source ships
+    # looking integrated while contributing nothing.
+    car = n.from_sheypoor({"name": "x", "brand": {"name": "پژو"},
+                           "vehicleModelDate": "1396",
+                           "offers": {"Price": 12_000_000_000, "sku": 2}})
+    assert car["price_toman"] == 1_200_000_000
+
+
+def test_sheypoor_mixes_year_systems_in_one_field():
+    # Divar splits the two systems across two fields — Jalali in productionDate,
+    # Gregorian in vehicleModelDate. Sheypoor puts whichever the seller used
+    # into vehicleModelDate alone: a domestic Pride is 1382 and an imported
+    # Mohave in the same 24-ad page is 2010.
+    pride = n.from_sheypoor({"name": "پرایدمدل1382", "brand": {"name": "پراید"},
+                             "vehicleModelDate": "1382",
+                             "offers": {"Price": 3_500_000_000, "sku": 3}})
+    mohave = n.from_sheypoor({"name": "موهاوی 8سیلندر 2010 فول", "brand": {"name": "کیا"},
+                              "vehicleModelDate": "2010",
+                              "offers": {"Price": 62_000_000_000, "sku": 4}})
+    assert (pride["year_jalali"], pride["year_gregorian"]) == (1382, 2003)
+    assert (mohave["year_jalali"], mohave["year_gregorian"]) == (1389, 2010)
+
+
+def test_sheypoor_damage_vocabulary_is_its_own():
+    # Sheypoor writes sentences, not slugs, and «تصادفی» — the one a buyer most
+    # needs — was a value in BODY_STATUS but never a key, so it resolved to
+    # None until this source arrived.
+    for raw, expected in [
+        ("سالم بدون خط و خش", "بدون رنگ"),
+        ("سالم با خط و خش", "بدون رنگ"),
+        ("یک لکه رنگ", "رنگ‌شدگی"),
+        ("چند لکه رنگ", "رنگ‌شدگی"),
+        ("تصادفی", "تصادفی"),
+    ]:
+        car = n.from_sheypoor({"name": "x", "brand": {"name": "پراید"},
+                               "vehicleModelDate": "1390", "knownVehicleDamages": raw,
+                               "offers": {"Price": 4_200_000_000, "sku": 5}})
+        assert car["body_status"] == expected, (raw, car["body_status"])
+
+
+def test_sheypoor_image_is_a_list_not_a_string():
+    # Divar's `image` is a URL string; Sheypoor's is a list of ImageObject.
+    # Passed through unchanged the front end gets a list where a URL belongs.
+    car = n.from_sheypoor({
+        "name": "x", "brand": {"name": "پژو"}, "vehicleModelDate": "1396",
+        "offers": {"Price": 12_000_000_000, "sku": 6},
+        "image": [{"@type": "ImageObject",
+                   "contentUrl": "https://cdn.sheypoor.com/imgs/2026/08/08/1/a.webp"}],
+    })
+    assert car["image"] == "https://cdn.sheypoor.com/imgs/2026/08/08/1/a.webp"
+
+
+def test_sheypoor_resolves_to_a_spec_without_a_model_field():
+    # This source publishes no model and no trim — only a Persian brand and the
+    # seller's title. If the title were dropped from the record, every Sheypoor
+    # listing would key on brand alone, resolve to nothing, and quietly never
+    # join another source's cluster. Same failure shape as the Khodro45 gearbox.
+    from extract import resolve, spec_key
+    car = n.from_sheypoor({
+        "name": "پراید 131 SE مدل 98 بدون رنگ", "brand": {"name": "پراید"},
+        "vehicleModelDate": "1398", "vehicleTransmission": "دنده‌ای",
+        "mileageFromOdometer": {"value": "120000"},
+        "offers": {"Price": 8_200_000_000, "sku": 7},
+    })
+    assert car["model_raw"] is None
+    res = resolve(car)
+    assert (res.brand, res.model) == ("pride", "131")
+    assert spec_key(car, res) == "pride/131/base/mt/1398/4"
+
+
+def test_sheypoor_source_id_survives_a_retitled_ad():
+    # The ad URL embeds a slug built from the seller's title, and sellers edit
+    # titles. Keying on the URL would turn one ad into two offers on the card;
+    # dedup collapses on (source, source_id) and 40% of rows are re-crawls.
+    from sources import sheypoor
+    before = {"payload": {"offers": {"sku": 465632926},
+                          "url": "https://www.sheypoor.com/v/موهاوی-2010-465632926.html"}}
+    after = {"payload": {"offers": {"sku": 465632926},
+                         "url": "https://www.sheypoor.com/v/موهاوی-2010-فول-465632926.html"}}
+    assert sheypoor.source_id(before) == sheypoor.source_id(after) == "465632926"
+
+
+def test_sheypoor_city_comes_from_the_page_not_the_ad():
+    # A Sheypoor Vehicle carries no location at all; the city is a property of
+    # the listing page, read out of its breadcrumb and attached at fetch time.
+    from sources import sheypoor
+    blocks = [{"@type": "BreadcrumbList", "itemListElement": [
+        {"name": "خراسان رضوی", "item": "https://www.sheypoor.com/s/razavi-khorasan"},
+        {"name": "مشهد", "item": "https://www.sheypoor.com/s/mashhad"},
+        {"name": "وسایل نقلیه", "item": "https://www.sheypoor.com/s/mashhad/vehicles"},
+    ]}]
+    assert sheypoor._city_fa(blocks, "mashhad") == "مشهد"
+    # «تهران» must not be answered by the province crumb /s/tehran-province.
+    tehran = [{"@type": "BreadcrumbList", "itemListElement": [
+        {"name": "استان تهران", "item": "https://www.sheypoor.com/s/tehran-province"},
+        {"name": "تهران", "item": "https://www.sheypoor.com/s/tehran"},
+    ]}]
+    assert sheypoor._city_fa(tehran, "tehran") == "تهران"

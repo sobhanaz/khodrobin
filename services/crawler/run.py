@@ -87,7 +87,14 @@ def main() -> int:
     with out_path.open("a", encoding="utf-8") as fh:
         for name in wanted:
             mod = sources.ALL[name]
-            rows = mod.fetch(limiter, args.cities) if name == "divar" else mod.fetch(limiter, args.pages)
+            # Divar and Sheypoor are city-scoped — their listing URLs contain
+            # the city — while the other three serve one national feed.
+            if name == "divar":
+                rows = mod.fetch(limiter, args.cities)
+            elif name == "sheypoor":
+                rows = mod.fetch(limiter, args.cities, args.pages)
+            else:
+                rows = mod.fetch(limiter, args.pages)
             for raw in rows:
                 rec = envelope(raw, mod)
                 key = (rec["source"], rec["source_id"], rec["content_hash"])

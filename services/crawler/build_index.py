@@ -41,7 +41,8 @@ from normalize import normalize  # noqa: E402
 from plausibility import flags  # noqa: E402
 from vocab import BRANDS, MODELS, TRIMS  # noqa: E402
 
-SOURCE_FA = {"divar": "دیوار", "bama": "باما", "hamrah": "همراه‌مکانیک", "khodro45": "خودرو۴۵"}
+SOURCE_FA = {"divar": "دیوار", "bama": "باما", "hamrah": "همراه‌مکانیک",
+             "khodro45": "خودرو۴۵", "sheypoor": "شیپور"}
 GEARBOX_FA = {"at": "اتوماتیک", "mt": "دنده‌ای", "na": None}
 
 

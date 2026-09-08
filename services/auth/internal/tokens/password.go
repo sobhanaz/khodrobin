@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -81,6 +82,31 @@ func Secret() (string, error) {
 		return "", fmt.Errorf("read secret: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// Code returns a six-digit decimal code for email verification.
+//
+// Rejection sampling rather than a plain modulo, because % 1_000_000 over a
+// uint32 biases the last 296 values of the space — irrelevant for most uses,
+// but this codebase treats random values as security machinery and a 0.007%
+// skew toward high codes is a skew an attacker can lean on. Six digits is the
+// same space TOTP uses, and the code is single-use and short-lived, so brute
+// force is bounded by the endpoint's rate limit.
+func Code() (string, error) {
+	// (2^32 / 1_000_000) * 1_000_000: the largest multiple of the space that
+	// fits in a uint32. Values at or above it are redrawn.
+	const limit = 4_294_000_000
+	for {
+		var b [4]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", fmt.Errorf("read code: %w", err)
+		}
+		n := binary.BigEndian.Uint32(b[:])
+		if n >= limit {
+			continue
+		}
+		return fmt.Sprintf("%06d", n%1_000_000), nil
+	}
 }
 
 // Fingerprint is what gets stored for a secret we hand out.

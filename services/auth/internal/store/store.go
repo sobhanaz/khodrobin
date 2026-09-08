@@ -58,6 +58,9 @@ type User struct {
 	LastLoginAt  *time.Time
 	FailedLogins int
 	LockedUntil  *time.Time
+	// Opt-in for promotional mail, which is a different question from having an
+	// account: the register page promises we send none without it.
+	MarketingConsent bool
 }
 
 func (u *User) Verified() bool { return u.VerifiedAt != nil }
@@ -81,12 +84,18 @@ func isUnique(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func (s *Store) CreateUser(ctx context.Context, email, hash string, name *string) (*User, error) {
-	u := &User{Email: NormalizeEmail(email), PasswordHash: hash, DisplayName: name}
+// CreateUser takes the marketing opt-in alongside the credentials because the
+// timestamp has to be stamped in the same statement that records the choice.
+// Written afterwards it would be a second thing to remember, and the one time
+// it is forgotten the row says "consented" with no date to defend it.
+func (s *Store) CreateUser(ctx context.Context, email, hash string, name *string, marketing bool) (*User, error) {
+	u := &User{Email: NormalizeEmail(email), PasswordHash: hash, DisplayName: name,
+		MarketingConsent: marketing}
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, display_name)
-		 VALUES ($1, $2, $3) RETURNING id, created_at, is_admin`,
-		u.Email, hash, name,
+		`INSERT INTO users (email, password_hash, display_name, marketing_consent, marketing_consent_at)
+		 VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() END)
+		 RETURNING id, created_at, is_admin`,
+		u.Email, hash, name, marketing,
 	).Scan(&u.ID, &u.CreatedAt, &u.IsAdmin)
 	if isUnique(err) {
 		return nil, ErrDuplicate
@@ -98,12 +107,13 @@ func (s *Store) CreateUser(ctx context.Context, email, hash string, name *string
 }
 
 const userCols = `id, email, password_hash, display_name, verified_at, is_admin,
-                  created_at, last_login_at, failed_logins, locked_until`
+                  created_at, last_login_at, failed_logins, locked_until, marketing_consent`
 
 func scanUser(row pgx.Row) (*User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName, &u.VerifiedAt,
-		&u.IsAdmin, &u.CreatedAt, &u.LastLoginAt, &u.FailedLogins, &u.LockedUntil)
+		&u.IsAdmin, &u.CreatedAt, &u.LastLoginAt, &u.FailedLogins, &u.LockedUntil,
+		&u.MarketingConsent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -316,7 +326,172 @@ func (s *Store) CreateContactMessage(ctx context.Context, name, email, subject, 
 	return err
 }
 
+// --- subscribers -----------------------------------------------------------
+
+type Subscriber struct {
+	ID             int64      `json:"id"`
+	Email          string     `json:"email"`
+	ConfirmedAt    *time.Time `json:"confirmed_at"`
+	UnsubscribedAt *time.Time `json:"unsubscribed_at"`
+	Source         string     `json:"source"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
+const subscriberCols = `id, email, confirmed_at, unsubscribed_at, source, created_at`
+
+func scanSubscribers(rows pgx.Rows) ([]Subscriber, error) {
+	defer rows.Close()
+	out := []Subscriber{}
+	for rows.Next() {
+		var sub Subscriber
+		if err := rows.Scan(&sub.ID, &sub.Email, &sub.ConfirmedAt, &sub.UnsubscribedAt,
+			&sub.Source, &sub.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan subscriber: %w", err)
+		}
+		out = append(out, sub)
+	}
+	return out, rows.Err()
+}
+
+// SubscribePending records an unconfirmed subscription and reports whether a
+// confirmation mail is owed.
+//
+// The conflict clause carries the two rules that make this list legal. A
+// returning address is fully reset — new token, confirmed_at cleared — because
+// somebody who unsubscribed and came back is giving consent again, not resuming
+// the consent they withdrew. And an address that is already confirmed and still
+// subscribed is left untouched: without that guard, anyone typing a stranger's
+// address into the form could knock them off the list until they re-confirmed.
+func (s *Store) SubscribePending(ctx context.Context, email, tokenHash, source string) (bool, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO subscribers (email, token_hash, source)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (email) DO UPDATE
+		    SET token_hash = EXCLUDED.token_hash,
+		        confirmed_at = NULL,
+		        unsubscribed_at = NULL,
+		        source = EXCLUDED.source
+		  WHERE subscribers.confirmed_at IS NULL OR subscribers.unsubscribed_at IS NOT NULL
+		 RETURNING id`,
+		NormalizeEmail(email), tokenHash, source).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("subscribe: %w", err)
+	}
+	return true, nil
+}
+
+// ConfirmSubscriber turns a claimed address into a consented one.
+//
+// COALESCE rather than a used-once guard, because people double-click links in
+// mail clients and being told "this link is already used" for something that
+// worked is a support ticket. An unsubscribed row is excluded so an old
+// confirmation link cannot resurrect someone who left.
+func (s *Store) ConfirmSubscriber(ctx context.Context, tokenHash string) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE subscribers SET confirmed_at = COALESCE(confirmed_at, now())
+		  WHERE token_hash = $1 AND unsubscribed_at IS NULL`, tokenHash)
+	if err != nil {
+		return fmt.Errorf("confirm subscriber: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Unsubscribe is idempotent, and keeps the first timestamp.
+//
+// This link is clicked from a mail client, sometimes twice, sometimes by the
+// client's own link scanner. The second click must behave exactly like the
+// first — an error page here reads as "it didn't work" and the next step is a
+// spam complaint.
+func (s *Store) Unsubscribe(ctx context.Context, tokenHash string) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE subscribers SET unsubscribed_at = COALESCE(unsubscribed_at, now())
+		  WHERE token_hash = $1`, tokenHash)
+	if err != nil {
+		return fmt.Errorf("unsubscribe: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) ListSubscribers(ctx context.Context, limit, offset int) ([]Subscriber, int64, error) {
+	var total int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM subscribers`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count subscribers: %w", err)
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+subscriberCols+` FROM subscribers
+		  ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list subscribers: %w", err)
+	}
+	list, err := scanSubscribers(rows)
+	return list, total, err
+}
+
+// MailableSubscribers is the export, and the filter is the entire point of it.
+//
+// Confirmed and not unsubscribed: the list that can legally be mailed. Anything
+// wider is a spam run wearing a CSV extension, and the sending domain pays for
+// it long after the campaign.
+func (s *Store) MailableSubscribers(ctx context.Context) ([]Subscriber, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+subscriberCols+` FROM subscribers
+		  WHERE confirmed_at IS NOT NULL AND unsubscribed_at IS NULL
+		  ORDER BY confirmed_at`)
+	if err != nil {
+		return nil, fmt.Errorf("mailable subscribers: %w", err)
+	}
+	return scanSubscribers(rows)
+}
+
 // --- admin -----------------------------------------------------------------
+
+// AdminUser is the account as an operator sees it: no password hash, no lockout
+// counters, nothing that would turn the admin page into a credential leak.
+type AdminUser struct {
+	ID               int64      `json:"id"`
+	Email            string     `json:"email"`
+	DisplayName      *string    `json:"display_name"`
+	Verified         bool       `json:"verified"`
+	IsAdmin          bool       `json:"is_admin"`
+	MarketingConsent bool       `json:"marketing_consent"`
+	CreatedAt        time.Time  `json:"created_at"`
+	LastLoginAt      *time.Time `json:"last_login_at"`
+}
+
+func (s *Store) ListUsers(ctx context.Context, limit, offset int) ([]AdminUser, int64, error) {
+	var total int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, email, display_name, verified_at IS NOT NULL, is_admin,
+		        marketing_consent, created_at, last_login_at
+		   FROM users ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+	out := []AdminUser{}
+	for rows.Next() {
+		var u AdminUser
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Verified, &u.IsAdmin,
+			&u.MarketingConsent, &u.CreatedAt, &u.LastLoginAt); err != nil {
+			return nil, 0, fmt.Errorf("scan user: %w", err)
+		}
+		out = append(out, u)
+	}
+	return out, total, rows.Err()
+}
 
 type Counts struct {
 	Users          int64 `json:"users"`
@@ -324,6 +499,12 @@ type Counts struct {
 	SavedSearches  int64 `json:"saved_searches"`
 	ActiveSessions int64 `json:"active_sessions"`
 	UnreadContact  int64 `json:"unread_contact"`
+	Subscribers    int64 `json:"subscribers"`
+	// Confirmed and not unsubscribed — the number that can actually be mailed,
+	// which is the only one worth putting on a dashboard. Total minus this is
+	// the funnel loss, and it is visible from the two figures together.
+	SubscribersConfirmed int64 `json:"subscribers_confirmed"`
+	MarketingOptin       int64 `json:"marketing_optin"`
 }
 
 func (s *Store) Counts(ctx context.Context) (*Counts, error) {
@@ -333,8 +514,13 @@ func (s *Store) Counts(ctx context.Context) (*Counts, error) {
 		       (SELECT count(*) FROM users WHERE verified_at IS NOT NULL),
 		       (SELECT count(*) FROM saved_searches),
 		       (SELECT count(*) FROM sessions WHERE revoked_at IS NULL AND expires_at > now()),
-		       (SELECT count(*) FROM contact_messages WHERE handled_at IS NULL)`,
-	).Scan(&c.Users, &c.Verified, &c.SavedSearches, &c.ActiveSessions, &c.UnreadContact)
+		       (SELECT count(*) FROM contact_messages WHERE handled_at IS NULL),
+		       (SELECT count(*) FROM subscribers),
+		       (SELECT count(*) FROM subscribers
+		         WHERE confirmed_at IS NOT NULL AND unsubscribed_at IS NULL),
+		       (SELECT count(*) FROM users WHERE marketing_consent)`,
+	).Scan(&c.Users, &c.Verified, &c.SavedSearches, &c.ActiveSessions, &c.UnreadContact,
+		&c.Subscribers, &c.SubscribersConfirmed, &c.MarketingOptin)
 	if err != nil {
 		return nil, fmt.Errorf("counts: %w", err)
 	}

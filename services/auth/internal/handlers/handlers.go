@@ -15,12 +15,14 @@ package handlers
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,13 +35,21 @@ import (
 )
 
 const (
-	verifyTTL      = 24 * time.Hour
+	verifyTTL = 24 * time.Hour
+	// Short on purpose: six digits against a rate-limited endpoint are safe for
+	// a quarter of an hour, and a code that never expires is a code that gets
+	// shoulder-surfed out of a phone's notification shade days later.
+	codeTTL        = 15 * time.Minute
 	resetTTL       = time.Hour
 	lockThreshold  = 8
 	lockDuration   = 15 * time.Minute
 	minPasswordLen = 10
 	maxPasswordLen = 200
 	refreshCookie  = "kb_refresh"
+	// Admin lists are paged. Uncapped, one ?limit=1000000 turns a dashboard
+	// into a full table scan streamed to a browser.
+	defaultPageLimit = 50
+	maxPageLimit     = 200
 )
 
 type API struct {
@@ -62,6 +72,10 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
 	mux.HandleFunc("POST /api/auth/refresh", a.rateLimited(60, a.refresh))
 	mux.HandleFunc("GET /api/auth/verify", a.rateLimited(20, a.verify))
+	// Typed by a human from a mail client, not clicked — the loose rate limit
+	// that link verification uses is still the right one, because the code is
+	// six digits, single-use, and fifteen minutes old.
+	mux.HandleFunc("POST /api/auth/verify/code", a.rateLimited(10, a.verifyCode))
 	mux.HandleFunc("POST /api/auth/resend", a.rateLimited(3, a.resend))
 	mux.HandleFunc("POST /api/auth/forgot", a.rateLimited(3, a.forgot))
 	mux.HandleFunc("POST /api/auth/reset", a.rateLimited(5, a.reset))
@@ -70,7 +84,16 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/searches", a.authed(a.createSearch))
 	mux.HandleFunc("DELETE /api/auth/searches/{id}", a.authed(a.deleteSearch))
 	mux.HandleFunc("POST /api/auth/contact", a.rateLimited(3, a.contact))
+	mux.HandleFunc("POST /api/auth/subscribe", a.rateLimited(5, a.subscribe))
+	// Confirm and unsubscribe are clicked from a mail client, sometimes by its
+	// link scanner before the human gets there, so the limit is the loose one
+	// that verification already uses rather than the signup one.
+	mux.HandleFunc("GET /api/auth/subscribe/confirm", a.rateLimited(20, a.confirmSubscribe))
+	mux.HandleFunc("GET /api/auth/unsubscribe", a.rateLimited(20, a.unsubscribe))
 	mux.HandleFunc("GET /api/auth/admin/summary", a.adminOnly(a.adminSummary))
+	mux.HandleFunc("GET /api/auth/admin/users", a.adminOnly(a.adminUsers))
+	mux.HandleFunc("GET /api/auth/admin/subscribers", a.adminOnly(a.adminSubscribers))
+	mux.HandleFunc("GET /api/auth/admin/subscribers.csv", a.adminOnly(a.adminSubscribersCSV))
 	// Registered twice on purpose. Compose reaches this service directly at
 	// /healthz, while Caddy forwards the whole /api/auth/* path unchanged, so an
 	// external monitor needs the prefixed form.
@@ -168,6 +191,18 @@ func (a *API) rateLimited(perMinute int, next http.HandlerFunc) http.HandlerFunc
 	}
 }
 
+// page reads the two list parameters every admin table sends, with the cap.
+func page(r *http.Request) (limit, offset int) {
+	limit, offset = defaultPageLimit, 0
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = min(v, maxPageLimit)
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && v > 0 {
+		offset = v
+	}
+	return limit, offset
+}
+
 type ctxKey struct{}
 
 func (a *API) authed(next func(http.ResponseWriter, *http.Request, *tokens.Claims)) http.HandlerFunc {
@@ -204,6 +239,9 @@ type credentials struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name,omitempty"`
+	// Absent means no. Consent has to be an act, and a field that defaults to
+	// true the moment a caller forgets it is not one.
+	MarketingConsent bool `json:"marketing_consent,omitempty"`
 }
 
 func validEmail(s string) bool {
@@ -249,7 +287,7 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		name = &n
 	}
 
-	user, err := a.store.CreateUser(r.Context(), in.Email, hash, name)
+	user, err := a.store.CreateUser(r.Context(), in.Email, hash, name, in.MarketingConsent)
 	switch {
 	case errors.Is(err, store.ErrDuplicate):
 		// Same reply as success. Telling an anonymous caller which addresses are
@@ -277,7 +315,10 @@ func domainOf(email string) string {
 	return "?"
 }
 
-// sendVerification issues a link and mails it without blocking the reply.
+// sendVerification issues a link and a six-digit code, and mails both without
+// blocking the reply. Two independent token rows: using one path does not
+// invalidate the other, which is what makes «the link did nothing» recoverable
+// by typing the code that arrived in the same message.
 func (a *API) sendVerification(ctx context.Context, userID int64, email string) {
 	secret, err := tokens.Secret()
 	if err != nil {
@@ -288,9 +329,18 @@ func (a *API) sendVerification(ctx context.Context, userID int64, email string) 
 		a.log.Error("store verification token", "err", err)
 		return
 	}
+	code, err := tokens.Code()
+	if err != nil {
+		a.log.Error("verification code", "err", err)
+		return
+	}
+	if err := a.store.CreateToken(ctx, userID, "verify_email_code", tokens.Fingerprint(code), codeTTL); err != nil {
+		a.log.Error("store verification code", "err", err)
+		return
+	}
 	link := a.baseURL + "/verify?token=" + secret
 	go func() {
-		subject, body := appmail.Verify(link)
+		subject, body := appmail.Verify(link, code)
 		if err := a.mailer.Send(email, subject, body); err != nil {
 			// Not fatal: the account exists and the link can be resent.
 			a.log.Warn("verification mail failed", "err", err)
@@ -440,12 +490,85 @@ func (a *API) verify(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "این لینک منقضی شده یا قبلاً استفاده شده است.")
 		return
 	}
-	if err := a.store.MarkVerified(r.Context(), userID); err != nil {
+	if err := a.verifyUser(r.Context(), userID); err != nil {
 		a.log.Error("mark verified", "err", err)
 		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "ایمیلت تأیید شد."})
+}
+
+// verifyCode is the typing path of verification: the six-digit code from the
+// same mail that carried the link.
+func (a *API) verifyCode(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Code string `json:"code"`
+	}
+	if err := decode(r, &in); err != nil {
+		fail(w, http.StatusBadRequest, "درخواست نامعتبر است.")
+		return
+	}
+	code := strings.TrimSpace(in.Code)
+	if !isSixDigits(code) {
+		fail(w, http.StatusBadRequest, "کد ۶ رقمی را کامل وارد کن.")
+		return
+	}
+	userID, err := a.store.ConsumeToken(r.Context(), "verify_email_code", tokens.Fingerprint(code))
+	if err != nil {
+		// Same shape of reply as the link path: nothing here tells a guesser
+		// whether the code was real but used, or never existed.
+		fail(w, http.StatusBadRequest, "این کد معتبر نیست یا منقضی شده است.")
+		return
+	}
+	if err := a.verifyUser(r.Context(), userID); err != nil {
+		a.log.Error("mark verified by code", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "ایمیلت تأیید شد."})
+}
+
+func isSixDigits(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// verifyUser marks the account verified and sends the welcome mail only when
+// this call is what made it verified.
+//
+// The guard matters: a second click on an old, still-valid link must not
+// re-welcome an account that has been active for months.
+func (a *API) verifyUser(ctx context.Context, userID int64) error {
+	user, err := a.store.UserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	fresh := !user.Verified()
+	if err := a.store.MarkVerified(ctx, userID); err != nil {
+		return err
+	}
+	if fresh {
+		a.sendWelcome(user.Email)
+	}
+	return nil
+}
+
+// sendWelcome mails the onboarding note without blocking the reply.
+func (a *API) sendWelcome(email string) {
+	link := a.baseURL + "/"
+	go func() {
+		subject, body := appmail.Welcome(link)
+		if err := a.mailer.Send(email, subject, body); err != nil {
+			a.log.Warn("welcome mail failed", "err", err)
+		}
+	}()
 }
 
 func (a *API) resend(w http.ResponseWriter, r *http.Request) {
@@ -520,6 +643,19 @@ func (a *API) reset(w http.ResponseWriter, r *http.Request) {
 	// Changing a password ends every existing session. If the reset happened
 	// because someone else had access, leaving their session alive defeats it.
 	_ = a.store.RevokeAllSessions(r.Context(), userID)
+	// The security notice is worth sending even when the owner did the reset —
+	// the one time it matters is the time the reset was not theirs, and a mail
+	// that only fires when suspicious is a mail an attacker can suppress.
+	if user, err := a.store.UserByID(r.Context(), userID); err == nil {
+		login, forgot := a.baseURL+"/login", a.baseURL+"/forgot"
+		email := user.Email
+		go func() {
+			subject, body := appmail.PasswordChanged(login, forgot)
+			if err := a.mailer.Send(email, subject, body); err != nil {
+				a.log.Warn("password-changed mail failed", "err", err)
+			}
+		}()
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "رمز عبور عوض شد. دوباره وارد شو."})
 }
 
@@ -583,6 +719,19 @@ func (a *API) createSearch(w http.ResponseWriter, r *http.Request, c *tokens.Cla
 		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
 		return
 	}
+	// Arming an alert gets a confirmation. An alert people do not know is on
+	// gets deleted as spam the first time it fires — the mail states the same
+	// search and threshold the alert will later fire with.
+	if in.AlertPct != nil {
+		pct, email := *in.AlertPct, c.Email
+		resultsLink := a.baseURL + "/?q=" + url.QueryEscape(saved.Query)
+		go func() {
+			subject, body := appmail.SavedSearchCreated(saved.Query, pct, resultsLink)
+			if err := a.mailer.Send(email, subject, body); err != nil {
+				a.log.Warn("saved-search mail failed", "err", err)
+			}
+		}()
+	}
 	writeJSON(w, http.StatusCreated, saved)
 }
 
@@ -634,6 +783,124 @@ func (a *API) contact(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok", "message": "پیامت رسید. ممنون."})
 }
 
+// --- newsletter ------------------------------------------------------------
+
+// signupSource labels where a signup came from. It arrives from the page, so it
+// is clamped rather than trusted — and an unusable label falls back to the
+// default instead of failing the request, because a marketing tag is never
+// worth losing a subscriber over.
+func signupSource(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || utf8.RuneCountInString(s) > 40 {
+		return "landing"
+	}
+	return s
+}
+
+// subscribe starts double opt-in, and answers the same way every time.
+//
+// 202 for a fresh address, for one already confirmed, and for one that left
+// last month. Registration is enumeration-safe for the reason given at the top
+// of this file, and a newsletter box that answered differently would hand back
+// the same oracle through a form that needs no password at all.
+//
+// The list itself stays empty until the link in that one message is clicked, so
+// typing a stranger's address in here costs them one mail and enrols nobody.
+func (a *API) subscribe(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Email  string `json:"email"`
+		Source string `json:"source,omitempty"`
+	}
+	if err := decode(r, &in); err != nil || !validEmail(in.Email) {
+		fail(w, http.StatusBadRequest, "ایمیل معتبر وارد کن.")
+		return
+	}
+	secret, err := tokens.Secret()
+	if err != nil {
+		a.log.Error("subscribe secret", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد. دوباره تلاش کن.")
+		return
+	}
+	email := store.NormalizeEmail(in.Email)
+	owed, err := a.store.SubscribePending(r.Context(), email, tokens.Fingerprint(secret),
+		signupSource(in.Source))
+	if err != nil {
+		a.log.Error("subscribe", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد. دوباره تلاش کن.")
+		return
+	}
+	if owed {
+		// Only when the row actually needs a confirmation. Mailing an address
+		// that is already confirmed every time somebody types it into the box
+		// is how a sender earns a complaint rate.
+		a.sendSubscribeConfirmation(email, secret)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status":  "ok",
+		"message": "اگر این نشانی تازه باشد، لینک تأیید برایت فرستاده می‌شود. تا تأییدش نکنی چیزی نمی‌فرستیم."})
+}
+
+// sendSubscribeConfirmation mails the double opt-in link without blocking.
+//
+// Both links carry the same secret because one row has one token: the link that
+// confirms the address is the link that removes it, which is why the mail can
+// offer a way out to someone who never asked to be in.
+func (a *API) sendSubscribeConfirmation(email, secret string) {
+	confirm := a.baseURL + "/subscribed?token=" + secret
+	optOut := a.baseURL + "/unsubscribe?token=" + secret
+	go func() {
+		subject, body := appmail.ConfirmSubscription(confirm, optOut)
+		if err := a.mailer.Send(email, subject, body); err != nil {
+			a.log.Warn("subscribe confirmation mail failed", "err", err)
+		}
+	}()
+}
+
+// confirmSubscribe is the half of double opt-in that creates the consent.
+//
+// Until this runs the row is an address somebody typed into a form, possibly
+// not their own. After it there is a timestamp to point at, which is the only
+// useful answer to "why are you mailing me".
+func (a *API) confirmSubscribe(w http.ResponseWriter, r *http.Request) {
+	secret := r.URL.Query().Get("token")
+	if secret == "" {
+		fail(w, http.StatusBadRequest, "لینک نامعتبر است.")
+		return
+	}
+	if err := a.store.ConfirmSubscriber(r.Context(), tokens.Fingerprint(secret)); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			a.log.Error("confirm subscriber", "err", err)
+		}
+		fail(w, http.StatusBadRequest, "این لینک معتبر نیست. دوباره عضو شو.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "عضویتت تأیید شد."})
+}
+
+// unsubscribe is a GET and needs no session, because it is clicked from a mail
+// client that carries neither our cookie nor a bearer token.
+//
+// Idempotent for the same reason it is a GET: mail clients prefetch links and
+// people click twice. The second click has to look exactly like the first —
+// «خطا» on an unsubscribe page is answered with the spam button, and that costs
+// the sending domain far more than one address.
+func (a *API) unsubscribe(w http.ResponseWriter, r *http.Request) {
+	secret := r.URL.Query().Get("token")
+	if secret == "" {
+		fail(w, http.StatusBadRequest, "لینک نامعتبر است.")
+		return
+	}
+	if err := a.store.Unsubscribe(r.Context(), tokens.Fingerprint(secret)); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			a.log.Error("unsubscribe", "err", err)
+		}
+		fail(w, http.StatusBadRequest, "لینک نامعتبر است.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "ok", "message": "از فهرست خبرنامه حذف شدی. دیگر ایمیلی نمی‌فرستیم."})
+}
+
 func (a *API) adminSummary(w http.ResponseWriter, r *http.Request, _ *tokens.Claims) {
 	counts, err := a.store.Counts(r.Context())
 	if err != nil {
@@ -645,6 +912,70 @@ func (a *API) adminSummary(w http.ResponseWriter, r *http.Request, _ *tokens.Cla
 		"counts": counts,
 		"mail":   map[string]bool{"configured": a.mailer.Configured()},
 	})
+}
+
+func (a *API) adminUsers(w http.ResponseWriter, r *http.Request, _ *tokens.Claims) {
+	limit, offset := page(r)
+	list, total, err := a.store.ListUsers(r.Context(), limit, offset)
+	if err != nil {
+		a.log.Error("admin users", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": list, "total": total})
+}
+
+func (a *API) adminSubscribers(w http.ResponseWriter, r *http.Request, _ *tokens.Claims) {
+	limit, offset := page(r)
+	list, total, err := a.store.ListSubscribers(r.Context(), limit, offset)
+	if err != nil {
+		a.log.Error("admin subscribers", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
+		return
+	}
+	// Everyone, including the people who left. The operator needs to see the
+	// funnel; the export below is what may actually be mailed.
+	writeJSON(w, http.StatusOK, map[string]any{"subscribers": list, "total": total})
+}
+
+// adminSubscribersCSV exports only the addresses that may legally be mailed.
+//
+// The filter is the entire point of the file, and it lives in the query rather
+// than here: confirmed, and not unsubscribed. Anything wider is a spam run
+// wearing a .csv extension, and the sending domain pays for it for months after
+// the campaign is forgotten.
+func (a *API) adminSubscribersCSV(w http.ResponseWriter, r *http.Request, _ *tokens.Claims) {
+	list, err := a.store.MailableSubscribers(r.Context())
+	if err != nil {
+		a.log.Error("mailable subscribers", "err", err)
+		fail(w, http.StatusInternalServerError, "مشکلی پیش آمد.")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="khodrobin-subscribers.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"email", "source", "confirmed_at"})
+	for _, sub := range list {
+		confirmed := ""
+		if sub.ConfirmedAt != nil {
+			confirmed = sub.ConfirmedAt.UTC().Format(time.RFC3339)
+		}
+		_ = cw.Write([]string{csvCell(sub.Email), csvCell(sub.Source), confirmed})
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		a.log.Error("write subscribers csv", "err", err)
+	}
+}
+
+// csvCell defuses a cell that a spreadsheet would treat as a formula. «=» is a
+// legal first character of an email address, and Excel runs what follows it on
+// the machine of whoever opens the export — which here is always the owner.
+func csvCell(s string) string {
+	if s != "" && strings.IndexByte("=+-@\t\r", s[0]) >= 0 {
+		return "'" + s
+	}
+	return s
 }
 
 func (a *API) healthz(w http.ResponseWriter, _ *http.Request) {

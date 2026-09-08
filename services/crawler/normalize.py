@@ -1,12 +1,15 @@
-"""Turn three incompatible source shapes into one canonical car record.
+"""Turn five incompatible source shapes into one canonical car record.
 
 The messiness this exists to absorb, all of it found in real captured data
 rather than imagined:
 
-* **Price units differ per source.** Divar quotes rials; Bama and
-  Hamrah-Mechanic quote tomans. Verified by comparing the same model and year
-  across sources: a 1385 Pride is 3,100,000,000 on Divar and 320,000,000 on
-  Bama — the same ~315M tomans. Getting this wrong inflates a price tenfold.
+* **Price units differ per source.** Divar and Sheypoor quote rials; Bama,
+  Hamrah-Mechanic and Khodro45 quote tomans. Verified by comparing the same
+  model and year across sources: a 1385 Pride is 3,100,000,000 on Divar and
+  320,000,000 on Bama — the same ~315M tomans. Getting this wrong inflates a
+  price tenfold. It is not a 3-2 split you can guess from the field names
+  either: Sheypoor labels its price ``priceCurrency: "IRR"`` and Bama labels
+  nothing, and both labels are equally uninformative until you price a car.
 * **Year systems are mixed inside a single source.** A domestic Pride is listed
   as 1398 (Jalali) while an imported Toyota in the same feed is 2025
   (Gregorian). We store both and key identity on the Jalali year.
@@ -36,7 +39,7 @@ BODY_STATUS = {
     "some-scratches": "بدون رنگ",
     "paintless-dent-removal": "بدون رنگ",
     "some-paint": "رنگ‌شدگی",
-    "accidental": "تصادفی",
+    "accidental": "تصادفی", "تصادفی": "تصادفی",
     "none": "بدون رنگ", "بدون رنگ": "بدون رنگ", "سالم": "بدون رنگ",
     "half-paint": "رنگ‌شدگی", "رنگ‌شدگی": "رنگ‌شدگی", "دوررنگ": "رنگ‌شدگی",
     "full-paint": "تمام‌رنگ", "تمام رنگ": "تمام‌رنگ",
@@ -202,11 +205,62 @@ def from_khodro45(p: dict) -> dict:
     }
 
 
+def from_sheypoor(p: dict) -> dict:
+    """Sheypoor's schema.org Vehicle, which looks like Divar's and is not.
+
+    Three things differ from the Divar payload it superficially resembles, and
+    every one of them fails silently rather than loudly:
+
+    * The price key is ``offers.Price`` with a **capital P** — non-standard, and
+      schema.org's own ``offers.price`` is simply absent. Read the lowercase key
+      and every Sheypoor listing arrives priceless, which build_index drops. The
+      source would appear to integrate and contribute nothing.
+    * ``image`` is a **list** of ImageObject, not a string. Copied straight
+      through it hands the front end a list where it expects a URL.
+    * ``vehicleModelDate`` carries whichever year system the seller used —
+      measured at 115 Jalali to 5 Gregorian in one 120-ad sample — while on
+      Divar that same field name is always Gregorian and Jalali lives in
+      ``productionDate``. Same field, same schema, different meaning per site.
+
+    Units are rials. Not because the payload says ``priceCurrency: "IRR"`` — a
+    label costs a site nothing to get wrong — but because the prices only make
+    sense at a tenth: a 1384 Pride quotes 4,100,000,000 here against a live
+    1385 Pride at 310,000,000 tomans on Bama. Divided by ten those are the same
+    car at the same money; read as tomans, Sheypoor is selling a 1384 Pride for
+    four billion tomans.
+
+    There is no model and no trim field, so identity is carried entirely by the
+    seller's free-text title and extract.resolve has to earn it from there.
+    """
+    jalali, greg = split_year(p.get("vehicleModelDate"))
+    offers = p.get("offers") or {}
+    images = p.get("image") or []
+    return {
+        "title": p.get("name"),
+        "brand_raw": (p.get("brand") or {}).get("name"),
+        "model_raw": None,
+        "trim_raw": None,
+        "year_jalali": jalali,
+        "year_gregorian": greg,
+        "mileage_km": mileage_km((p.get("mileageFromOdometer") or {}).get("value")),
+        "price_toman": price_toman(offers.get("Price"), unit="rial"),
+        "colour": p.get("color"),
+        "body_status": _lookup(BODY_STATUS, p.get("knownVehicleDamages")),
+        "transmission": _lookup(TRANSMISSION, p.get("vehicleTransmission")),
+        # Attached by the source module: the ad itself has no location, because
+        # on Sheypoor the city is a property of the page you found it on.
+        "city": p.get("sheypoor_city_fa"),
+        "url": p.get("url"),
+        "image": (images[0] or {}).get("contentUrl") if isinstance(images, list) and images else None,
+    }
+
+
 ADAPTERS = {
     "divar": from_divar,
     "bama": from_bama,
     "hamrah": from_hamrah,
     "khodro45": from_khodro45,
+    "sheypoor": from_sheypoor,
 }
 
 

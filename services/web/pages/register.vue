@@ -3,7 +3,7 @@ useSeoMeta({ title: 'ثبت‌نام — خودروبین', robots: 'noindex' })
 
 const { register, pending, error } = useAuth()
 
-const form = reactive({ email: '', password: '', name: '' })
+const form = reactive({ email: '', password: '', name: '', marketing: false })
 const touched = reactive({ email: false, password: false })
 const done = ref<string | null>(null)
 
@@ -22,7 +22,7 @@ const canSubmit = computed(() => /.+@.+\..+/.test(form.email.trim()) && passLen.
 async function submit() {
   touched.email = touched.password = true
   if (!canSubmit.value) return
-  const msg = await register(form.email.trim(), form.password, form.name.trim() || undefined)
+  const msg = await register(form.email.trim(), form.password, form.name.trim() || undefined, form.marketing)
   if (msg) done.value = msg
 }
 
@@ -136,6 +136,29 @@ function startOver() {
         hint="فقط برای اینکه ایمیل‌ها با اسمت شروع شود."
       />
 
+      <!-- Unchecked, and nothing in this page ever ticks it. A pre-ticked box
+           harvests an address rather than a permission, and the list it builds
+           is the one that gets reported as spam — which costs deliverability
+           for the price alerts people actually asked for. The label is inside
+           the box so the whole row is the hit target, not an 18px square. -->
+      <label
+        class="flex cursor-pointer items-start gap-3 rounded-xl border border-white/[.09] bg-surface/60 px-4 py-3.5
+               transition hover:border-white/[.16] focus-within:border-accent/55"
+      >
+        <input
+          v-model="form.marketing"
+          type="checkbox"
+          class="mt-1 size-[18px] shrink-0 accent-accent
+                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+        <span class="text-[.83rem] leading-7 text-ink-2">
+          خبرنامه‌ی خودروبین را هم برایم بفرست.
+          <span class="mt-0.5 block text-[.76rem] leading-6 text-ink-3">
+            گاهی درباره‌ی روند قیمت بازار و قابلیت‌های تازه. لغو با یک کلیک، از پای هر ایمیل.
+          </span>
+        </span>
+      </label>
+
       <div
         v-if="error"
         role="alert"
@@ -157,8 +180,14 @@ function startOver() {
         <NuxtLink to="/login" class="text-accent hover:underline">وارد شو</NuxtLink>
       </p>
 
+      <!-- The old line promised no marketing email at all, unconditionally.
+           The checkbox above made that promise false the moment it shipped, so
+           it is narrowed rather than deleted: the guarantee people came here
+           for — the address is for their alerts, not for a list — still holds,
+           and the one case where it does not is the one they chose themselves. -->
       <p class="mt-2 border-t border-white/[.07] pt-4 text-center text-[.76rem] leading-7 text-ink-3">
-        فقط ایمیلت را نگه می‌داریم تا هشدار قیمت بفرستیم. هیچ ایمیل تبلیغاتی‌ای نمی‌فرستیم.
+        ایمیلت را برای ورود و هشدار قیمت نگه می‌داریم. هیچ ایمیل تبلیغاتی‌ای نمی‌فرستیم مگر تیک بالا را
+        خودت زده باشی — و لغوش هم یک کلیک است، از پای هر ایمیل.
       </p>
     </form>
   </AuthShell>

@@ -42,6 +42,9 @@ export interface SearchResponse {
 export interface StatsResponse {
   built_at: string; loaded_at: string; offers: number
   stats: {
+    // captured is rows fetched, listings is what survives collapsing re-crawls
+    // of the same ad. The API reports both because either alone hides the other.
+    listings_captured: number; duplicates_collapsed: number
     listings: number; indexed: number; unresolved: number; resolved_pct: number
     specs: number; multi_source_specs: number; flagged_offers: number; sources: string[]
   }
