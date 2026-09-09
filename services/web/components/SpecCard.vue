@@ -35,7 +35,7 @@ const heading = computed(() => {
 const mileageBand = computed(() => {
   const b = props.spec.km_bucket
   if (b == null) return null
-  return `${f.money(b * 25)}–${f.money((b + 1) * 25)} هزار کیلومتر`
+  return `${f.money(b * 25)} تا ${f.money((b + 1) * 25)} هزار کیلومتر`
 })
 </script>
 
@@ -53,7 +53,10 @@ const mileageBand = computed(() => {
       <CarImage :src="spec.image ?? null" :alt="heading" />
 
       <div class="min-w-0 flex-1">
-        <h3 class="text-[1.06rem] font-bold tracking-tight">
+        <!-- No tracking-tight: this heading is Persian, and Persian letters
+             join, so negative tracking pulls the connecting strokes together
+             and the word stops reading as a word. -->
+        <h3 class="text-[1.06rem] font-bold">
           <NuxtLink :to="`/car/${spec.key}`" class="transition hover:text-accent">{{ heading }}</NuxtLink>
         </h3>
 
@@ -123,6 +126,12 @@ const mileageBand = computed(() => {
         :aria-expanded="open === 'backstage'"
         @click="toggle('backstage')"
       >پشت صحنه</button>
+
+      <!-- Pushed to the far end so it reads as a separate act from the three
+           disclosure toggles, and nowhere near the heading link: on a results
+           page the one thing a save button must never be mistaken for is the
+           card's own way in. -->
+      <SaveButton :spec="spec" :name="heading" class="ms-auto" />
     </div>
 
     <!-- grid-template-rows animates to a natural height; max-height guessing

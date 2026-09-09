@@ -38,8 +38,8 @@ export function usePasswordRules(password: Ref<string> | (() => string)) {
 
   const rules = computed(() => [
     { key: 'length', label: `دست‌کم ${MIN_PASSWORD_RUNES} نویسه`, ok: hasLength.value },
-    { key: 'symbol', label: 'دست‌کم یک نماد — مثل ! یا @ یا ؟', ok: hasSymbol.value },
-    { key: 'upper', label: 'دست‌کم یک حرف بزرگ لاتین — مثل A', ok: hasUpper.value },
+    { key: 'symbol', label: 'دست‌کم یک نماد، مثل ! یا @ یا ؟', ok: hasSymbol.value },
+    { key: 'upper', label: 'دست‌کم یک حرف بزرگ لاتین، مثل A', ok: hasUpper.value },
   ])
 
   const satisfied = computed(() => rules.value.every(r => r.ok))

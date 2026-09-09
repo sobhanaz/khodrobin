@@ -88,9 +88,19 @@ func main() {
 	history := index.NewHistory(historyPath, log)
 	go history.Watch(30*time.Second, stopWatch)
 
+	// Same volume, same rule: the detail warmer runs on its own budget and may
+	// finish a cycle having written nothing, so absent and empty are both
+	// normal states for this file.
+	detailsPath := os.Getenv("KHODROBIN_DETAILS")
+	if detailsPath == "" {
+		detailsPath = "/data/details.json"
+	}
+	details := index.NewDetails(detailsPath, log)
+	go details.Watch(30*time.Second, stopWatch)
+
 	// Readiness needs the store, so it is registered after the store exists.
 	mux.HandleFunc("GET /readyz", health.Ready(store))
-	mux.Handle("/", server.New(store, explains, history, log))
+	mux.Handle("/", server.New(store, explains, history, details, log))
 
 	srv := &http.Server{
 		Addr:              addr,

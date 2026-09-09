@@ -90,6 +90,12 @@ def build(raw_path: pathlib.Path) -> dict:
             flagged += 1
         groups[key].append({
             "source": car["source"],
+            # The other half of the offer's identity. It was already in the raw
+            # envelope and in normalize's output and got dropped here, which
+            # meant nothing downstream could name an individual offer without
+            # re-deriving it from the URL — a second parser, in Go, drifting
+            # from this one. details.json keys on "<source>:<source_id>".
+            "source_id": car["source_id"],
             "source_fa": SOURCE_FA.get(car["source"], car["source"]),
             "title": car["title"],
             "price": car["price_toman"],

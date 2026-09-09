@@ -20,6 +20,12 @@ func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)
 // newTestServer wires a server around a one-spec index and a history file that
 // may not exist — which is exactly the state of a first deploy.
 func newTestServer(t *testing.T, historyJSON string) *Server {
+	return newTestServerWith(t, historyJSON, "")
+}
+
+// newTestServerWith adds the details file, which is the newer of the two and
+// is likewise absent on a first deploy.
+func newTestServerWith(t *testing.T, historyJSON, detailsJSON string) *Server {
 	t.Helper()
 	dir := t.TempDir()
 	historyPath := filepath.Join(dir, "history.json")
@@ -28,12 +34,19 @@ func newTestServer(t *testing.T, historyJSON string) *Server {
 			t.Fatal(err)
 		}
 	}
+	detailsPath := filepath.Join(dir, "details.json")
+	if detailsJSON != "" {
+		if err := os.WriteFile(detailsPath, []byte(detailsJSON), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	idx := &index.Index{BuiltAt: "2026-01-01T00:00:00Z",
 		Specs: []index.Spec{{Key: knownKey, Brand: "peugeot", Model: "206"}}}
 	store := index.NewStore(filepath.Join(dir, "index.json"), idx, quiet())
 	explains := index.NewExplanations(filepath.Join(dir, "explanations.json"), quiet())
 	history := index.NewHistory(historyPath, quiet())
-	return New(store, explains, history, quiet())
+	details := index.NewDetails(detailsPath, quiet())
+	return New(store, explains, history, details, quiet())
 }
 
 func TestHistoryEndpoint(t *testing.T) {
@@ -114,5 +127,123 @@ func TestSearchHandlerAppliesOverrides(t *testing.T) {
 	}
 	if body.Result.Intent.PriceMax != 700_000_000 {
 		t.Errorf("intent.price_max = %d, want the override 700000000", body.Result.Intent.PriceMax)
+	}
+}
+
+func TestDetailEndpoint(t *testing.T) {
+	// The gearbox extra and the Persian colour are both there to prove the
+	// entry comes back whole, not just that the lookup hit.
+	warmed := `{"built_at":"2026-09-09T00:00:00Z","details":{"divar:tok123":{` +
+		`"description":"بدون رنگ","color":"سفید","damages":null,` +
+		`"images":["https://s.divar.ir/1.jpg"],"extras":{"gearbox":"دنده‌ای"},` +
+		`"fetched_at":"2026-09-09T00:00:00Z"}}}`
+
+	cases := []struct {
+		name        string
+		detailsJSON string
+		path        string
+		wantCode    int
+		wantBody    string
+	}{
+		{
+			// First deploy: the crawler has not written the file, and the API
+			// must still answer rather than 500 or refuse to start.
+			name:     "missing file is a 404, not a panic",
+			path:     "/api/v1/details/divar/tok123",
+			wantCode: 404,
+		},
+		{
+			name:        "known key returns the entry",
+			detailsJSON: warmed,
+			path:        "/api/v1/details/divar/tok123",
+			wantCode:    200,
+			wantBody:    `"key":"divar:tok123"`,
+		},
+		{
+			name:        "the entry comes back whole",
+			detailsJSON: warmed,
+			path:        "/api/v1/details/divar/tok123",
+			wantCode:    200,
+			wantBody:    `"gearbox":"دنده‌ای"`,
+		},
+		{
+			// Same source, an id nobody warmed. Most of the index is in this
+			// state by design, so it must be cheap and boring.
+			name:        "unknown id is a 404",
+			detailsJSON: warmed,
+			path:        "/api/v1/details/divar/nope",
+			wantCode:    404,
+		},
+		{
+			// A source name that is not one of the five. This must not reach a
+			// map, a file, or a 500 — it is simply not a key we could have.
+			name:        "unknown source is a 404, not a 500",
+			detailsJSON: warmed,
+			path:        "/api/v1/details/craigslist/tok123",
+			wantCode:    404,
+		},
+		{
+			// The path segments are only ever compared and concatenated into a
+			// map key; this pins that a traversal-shaped id stays inert.
+			name:        "a traversal-shaped id is just a miss",
+			detailsJSON: warmed,
+			path:        "/api/v1/details/divar/..%2F..%2Fetc%2Fpasswd",
+			wantCode:    404,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newTestServerWith(t, "", c.detailsJSON)
+			rec := httptest.NewRecorder()
+			s.ServeHTTP(rec, httptest.NewRequest("GET", c.path, nil))
+			if rec.Code != c.wantCode {
+				t.Fatalf("status = %d, want %d (body %s)", rec.Code, c.wantCode, rec.Body.String())
+			}
+			if c.wantBody != "" && !strings.Contains(rec.Body.String(), c.wantBody) {
+				t.Errorf("body %s does not contain %s", rec.Body.String(), c.wantBody)
+			}
+		})
+	}
+}
+
+// A null in the file must survive as a null in the response: the UI shows
+// "the source did not say" for a null and would show an empty row for "".
+func TestDetailPreservesNulls(t *testing.T) {
+	// One real field, deliberately. A record carrying nothing but a timestamp
+	// is a tombstone the crawler writes so a dead listing is not re-fetched
+	// every cycle, and the handler now 404s those rather than handing the page
+	// an object of nulls to render a panel from. This test is about how a
+	// PRESENT detail serialises its absent fields, so it needs to be present.
+	s := newTestServerWith(t, "", `{"built_at":"x","details":{"bama:9":{"description":"سالم","color":null,"fetched_at":"t"}}}`)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/details/bama/9", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Detail map[string]any `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := body.Detail["color"]; !ok || v != nil {
+		t.Errorf("detail.color = %v (present=%v), want an explicit null", v, ok)
+	}
+	// Absent collections serialise as empty, never null, so the UI can loop
+	// without a nil check.
+	if imgs, ok := body.Detail["images"].([]any); !ok || len(imgs) != 0 {
+		t.Errorf("detail.images = %v, want []", body.Detail["images"])
+	}
+}
+
+// A tombstone is bookkeeping, not content. The crawler writes one when a fetch
+// fails so a dead listing is not re-requested every three hours; serving it
+// would open a detail panel with nothing in it, which is worse than a 404.
+func TestDetailTombstoneIsAMiss(t *testing.T) {
+	s := newTestServerWith(t, "", `{"built_at":"x","details":{"bama:9":{"fetched_at":"t"}}}`)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/details/bama/9", nil))
+	if rec.Code != 404 {
+		t.Fatalf("status = %d, want 404: a timestamp-only entry is not a detail", rec.Code)
 	}
 }

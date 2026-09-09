@@ -8,6 +8,10 @@ watch(() => route.fullPath, () => { open.value = false })
 
 const links = [
   { to: '/search', label: 'جست‌وجو' },
+  // A default has to be a number people actually hold in their heads, and it
+  // has to return cars: /budget/800 is the middle of this market, not a token.
+  { to: '/budget/800', label: 'با بودجه' },
+  { to: '/saved', label: 'ذخیره‌شده‌ها' },
   { to: '/about', label: 'درباره' },
   { to: '/faq', label: 'پرسش‌ها' },
   { to: '/contact', label: 'تماس' },
@@ -26,13 +30,15 @@ const links = [
           خودروبین
         </NuxtLink>
 
+        <!-- Active state compares the FIRST path segment: «با بودجه» points at
+             one default amount but has to stay lit on every /budget/* page. -->
         <nav class="hidden items-center gap-1 md:flex" aria-label="اصلی">
           <NuxtLink
             v-for="l in links"
             :key="l.to"
             :to="l.to"
             class="rounded-full px-3 py-1.5 text-[.84rem] transition"
-            :class="route.path === l.to ? 'bg-white/[.06] text-ink' : 'text-ink-3 hover:text-ink-2'"
+            :class="route.path.split('/')[1] === l.to.split('/')[1] ? 'bg-white/[.06] text-ink' : 'text-ink-3 hover:text-ink-2'"
           >{{ l.label }}</NuxtLink>
         </nav>
 

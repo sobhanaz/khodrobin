@@ -24,6 +24,10 @@ RAW = os.getenv("CRAWL_RAW", "/data/raw/listings.jsonl")
 INDEX = os.getenv("CRAWL_INDEX", "/data/index.json")
 EXPLANATIONS = os.getenv("CRAWL_EXPLANATIONS", "/data/explanations.json")
 HISTORY = os.getenv("CRAWL_HISTORY", "/data/history.json")
+DETAILS = os.getenv("CRAWL_DETAILS", "/data/details.json")
+DETAIL_LIMIT = os.getenv("CRAWL_DETAIL_LIMIT", "60")
+DETAIL_BUDGET = os.getenv("CRAWL_DETAIL_BUDGET_SECONDS", "900")
+DETAIL_TTL_DAYS = os.getenv("CRAWL_DETAIL_TTL_DAYS", "7")
 AI_URL = os.getenv("CRAWL_AI_URL", "http://ai:8000")
 WARM_LIMIT = os.getenv("CRAWL_WARM_LIMIT", "120")
 WARM_BUDGET = os.getenv("CRAWL_WARM_BUDGET_SECONDS", "1800")
@@ -64,6 +68,23 @@ def record_history() -> None:
         log(f"history recording exited {rc}; the chart misses a point, the cycle continues")
 
 
+def enrich_details() -> None:
+    """Fetch detail pages for the shortlist's offers.
+
+    Ahead of warming because the two jobs fail differently. A spec with no warm
+    explanation still gets one, ten seconds later, on demand; an offer with no
+    detail entry has no fallback at all — the panel is simply absent. Details
+    are also the cheaper of the two, 900 seconds against 1800, so putting them
+    first costs explanations a quarter of an hour on the first cycle after a
+    deploy and nothing at all once both caches are warm.
+    """
+    rc = run([sys.executable, "enrich_details.py", "--index", INDEX,
+              "--out", DETAILS, "--limit", DETAIL_LIMIT,
+              "--budget-seconds", DETAIL_BUDGET, "--ttl-days", DETAIL_TTL_DAYS])
+    if rc != 0:
+        log(f"detail enrichment exited {rc}; listing pages keep their list-page fields")
+
+
 def warm_explanations() -> None:
     rc = run([sys.executable, "warm_explanations.py", "--index", INDEX,
               "--out", EXPLANATIONS, "--ai", AI_URL,
@@ -85,6 +106,7 @@ def rebuild_only() -> None:
         log(f"startup rebuild failed ({rc}); the API keeps serving the previous index")
         return
     record_history()
+    enrich_details()
     warm_explanations()
 
 
@@ -98,6 +120,7 @@ def cycle() -> None:
         log(f"index build failed ({rc}); the API keeps serving the previous index")
         return
     record_history()
+    enrich_details()
     # Explanations take ~10s each on CPU, which is fine here and unacceptable in
     # a request. Warming the top specs after every rebuild keeps «چرا این؟»
     # instant for everything a visitor sees first.

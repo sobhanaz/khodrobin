@@ -21,7 +21,14 @@ type Flag struct {
 }
 
 type Offer struct {
-	Source      string  `json:"source"`
+	Source string `json:"source"`
+	// The listing's own id at its source, and the other half of the key that
+	// addresses /api/v1/details/{source}/{id}. The crawler has emitted it since
+	// detail enrichment landed; this struct did not have it, so encoding/json
+	// dropped it on load and every detail became unreachable through the API.
+	// Seventh time a field has gone missing across this exact boundary, which
+	// is why schema_test.go pins the whole shape rather than trusting review.
+	SourceID    string  `json:"source_id"`
 	SourceFa    string  `json:"source_fa"`
 	Title       string  `json:"title"`
 	Price       int64   `json:"price"`

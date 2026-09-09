@@ -243,3 +243,15 @@ func offerID(raw string) string {
 	_ = source
 	return id
 }
+
+// KnownSource reports whether s is one of the five marketplaces this product
+// crawls. It reads the same table Parse resolves hosts through, so a sixth
+// source cannot be added to one and forgotten in the other.
+func KnownSource(s string) bool {
+	for _, v := range hosts {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}

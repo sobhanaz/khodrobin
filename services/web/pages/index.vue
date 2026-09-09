@@ -108,6 +108,13 @@ useSeoMeta({
       </div>
     </section>
 
+    <!-- The money-first way in. Half of real buyers cannot name the car they
+         want but know exactly what they can spend, and until this row existed
+         the site had no answer for them at all. -->
+    <section class="mt-6" aria-label="خرید با بودجه">
+      <BudgetEntry :specs="sample?.result.specs ?? null" />
+    </section>
+
     <LandingProof :stats="stats" />
 
     <!-- The other way in: not a query, a listing someone already has open. -->

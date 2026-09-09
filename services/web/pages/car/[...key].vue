@@ -115,7 +115,7 @@ const bySource = computed(() => {
             v-if="spec.km_bucket != null"
             class="rounded-md border border-white/[.07] bg-surface-2 px-2 py-0.5 text-[.78rem] text-ink-2"
           >
-            {{ f.money(spec.km_bucket * 25) }}–{{ f.money((spec.km_bucket + 1) * 25) }} هزار کیلومتر
+            {{ f.money(spec.km_bucket * 25) }} تا {{ f.money((spec.km_bucket + 1) * 25) }} هزار کیلومتر
           </span>
           <span
             v-if="spec.flag_count"
@@ -136,6 +136,7 @@ const bySource = computed(() => {
             <span class="ms-1 font-sans text-[.8rem] text-ink-3">تومان</span>
           </div>
           <PriceSpread :spec="spec" :delay="0" />
+          <SaveButton :spec="spec" :name="heading" class="mt-3" />
         </div>
       </div>
     </div>

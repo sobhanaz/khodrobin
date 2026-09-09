@@ -24,13 +24,14 @@ type Server struct {
 	store    *index.Store
 	explains *index.Explanations
 	history  *index.History
+	details  *index.Details
 	log      *slog.Logger
 	mux      *http.ServeMux
 	ai       *explainClient
 }
 
-func New(store *index.Store, explains *index.Explanations, history *index.History, log *slog.Logger) *Server {
-	s := &Server{store: store, explains: explains, history: history, log: log,
+func New(store *index.Store, explains *index.Explanations, history *index.History, details *index.Details, log *slog.Logger) *Server {
+	s := &Server{store: store, explains: explains, history: history, details: details, log: log,
 		mux: http.NewServeMux(), ai: newExplainClient()}
 	s.routes()
 	return s
@@ -45,6 +46,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/v1/explain/{key...}", s.handleExplain)
 	s.mux.HandleFunc("GET /api/v1/history/{key...}", s.handleHistory)
+	s.mux.HandleFunc("GET /api/v1/details/{source}/{id}", s.handleDetail)
 	ui, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		// Embedded at compile time: if this fails the binary is malformed.
@@ -211,4 +213,39 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			"built_at": s.explains.BuiltAt(),
 		},
 	})
+}
+
+// handleDetail serves the per-listing extras the crawler pulled from a source's
+// own ad page: the seller's description, colour, damage notes, gallery.
+//
+// Everything here is a map lookup against an in-memory file. The two path
+// segments are never joined into a path, opened, or fetched — the source is
+// checked against the five names the crawler knows and the id is only ever a
+// map key, so there is nothing for a crafted segment to reach. An unknown
+// source is a 404 for the same reason an unknown id is: the caller asked for a
+// detail that does not exist, and telling them which half of the key was wrong
+// only helps someone probing.
+func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
+	source := r.PathValue("source")
+	id := r.PathValue("id")
+	if !lookup.KnownSource(source) || id == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "detail not found"})
+		return
+	}
+	key := source + ":" + id
+	d, ok := s.details.Get(key)
+	if ok && d.Empty() {
+		// A tombstone. The crawler records that it tried and got nothing so a
+		// dead listing is not re-fetched every cycle; that is a bookkeeping
+		// entry, not a detail, and the caller must not be handed an object of
+		// nulls to render a panel from.
+		ok = false
+	}
+	if !ok {
+		// The normal miss. Details are warmed for the top specs only, and the
+		// file does not exist at all until the crawler's first detail cycle.
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "detail not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"key": key, "detail": d})
 }
