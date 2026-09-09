@@ -1,8 +1,11 @@
 package mail
 
 import (
+	"bufio"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"strings"
 	"testing"
 )
@@ -186,5 +189,81 @@ func TestWelcomeCarriesTheMarketingOptOutOnlyWhenThereIsOne(t *testing.T) {
 	_, without := Welcome("https://khodrobin.noxioai.com/", "")
 	if strings.Contains(without, "لغو خبرنامه") {
 		t.Error("offered to unsubscribe someone who never opted in")
+	}
+}
+
+// A plaintext SMTP server that never advertises STARTTLS. The old code sent the
+// password and the verification link to a server exactly like this.
+func TestSendRefusesAServerThatCannotEncrypt(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		br := bufio.NewReader(c)
+		fmt.Fprintf(c, "220 fake ESMTP\r\n")
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				return
+			}
+			switch {
+			case strings.HasPrefix(line, "EHLO"):
+				// Deliberately no 250-STARTTLS in the capability list.
+				fmt.Fprintf(c, "250-fake\r\n250 AUTH PLAIN LOGIN\r\n")
+			case strings.HasPrefix(line, "QUIT"):
+				fmt.Fprintf(c, "221 bye\r\n")
+				return
+			default:
+				fmt.Fprintf(c, "250 ok\r\n")
+			}
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	m := &Mailer{host: host, port: port, user: "u", pass: "hunter2", from: "a@b.test"}
+	err = m.Send("c@d.test", "subject", "body")
+	if err == nil {
+		t.Fatal("sent to a server with no STARTTLS: credentials went out in clear text")
+	}
+	if !strings.Contains(err.Error(), "STARTTLS") {
+		t.Fatalf("refused for the wrong reason: %v", err)
+	}
+}
+
+// Port 465 must wrap the socket in TLS before speaking SMTP. Handing a plain
+// listener an implicit-TLS client should fail in the handshake, never proceed.
+func TestPort465UsesImplicitTLS(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			// A plaintext greeting: correct for 587, wrong for 465.
+			fmt.Fprintf(c, "220 fake ESMTP\r\n")
+			c.Close()
+		}
+	}()
+
+	host, _, _ := net.SplitHostPort(ln.Addr().String())
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	m := &Mailer{host: host, port: port, user: "u", pass: "p", from: "a@b.test"}
+	// Not 465, so this path negotiates STARTTLS and fails on its absence.
+	if err := m.Send("c@d.test", "s", "b"); err == nil {
+		t.Fatal("expected a failure against a plaintext server")
+	}
+
+	m465 := &Mailer{host: host, port: "465", user: "u", pass: "p", from: "a@b.test"}
+	if err := m465.Send("c@d.test", "s", "b"); err == nil {
+		t.Fatal("port 465 did not attempt a TLS handshake")
 	}
 }

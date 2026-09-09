@@ -52,16 +52,37 @@ func (m *Mailer) Configured() bool {
 
 // Send delivers one message over STARTTLS.
 //
-// Explicit STARTTLS with a real ServerName rather than smtp.SendMail's default:
-// this carries verification links, and an unauthenticated downgrade would put
-// them on the wire in clear text.
+// Send delivers one message over an always-encrypted connection.
+//
+// TWO WAYS TO GET THERE, and the port decides which. Port 465 is implicit TLS
+// (SMTPS): the socket is wrapped before a single SMTP verb is spoken. Everything
+// else negotiates STARTTLS after connecting. Cloudflare's submission endpoint
+// offers only the former and explicitly refuses STARTTLS on 587; Gmail offers
+// only the latter. Supporting both is what lets the provider change by editing
+// two variables instead of this file.
+//
+// STARTTLS IS NOW REQUIRED RATHER THAN PREFERRED. It used to run only when the
+// server advertised the extension, so a server that stayed quiet about it got
+// the password and the verification links in clear text. The comment here
+// claimed that could not happen while the code allowed it, which is the same
+// shape as every other bug this project has had: a promise nothing enforced.
 func (m *Mailer) Send(to, subject, body string) error {
 	if !m.Configured() {
 		return fmt.Errorf("smtp is not configured")
 	}
 
 	addr := net.JoinHostPort(m.host, m.port)
-	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
+	tlsConf := &tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+
+	var conn net.Conn
+	var err error
+	implicit := m.port == "465"
+	if implicit {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsConf)
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
@@ -71,8 +92,11 @@ func (m *Mailer) Send(to, subject, body string) error {
 	}
 	defer client.Quit()
 
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err := client.StartTLS(&tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}); err != nil {
+	if !implicit {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("%s does not offer STARTTLS; refusing to send credentials in clear text", addr)
+		}
+		if err := client.StartTLS(tlsConf); err != nil {
 			return fmt.Errorf("starttls: %w", err)
 		}
 	}
