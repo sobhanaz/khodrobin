@@ -75,6 +75,13 @@ export function useAuth() {
     timer = setTimeout(() => { void refresh() }, Math.max(30, expiresIn - 60) * 1000)
   }
 
+  // document.cookie only ever exposes non-HttpOnly cookies, which is exactly
+  // what this one is for. Guarded for SSR, where there is no document at all.
+  function hasSessionHint(): boolean {
+    if (import.meta.server || typeof document === 'undefined') return false
+    return document.cookie.split('; ').some(c => c.startsWith('kb_session='))
+  }
+
   async function refresh(): Promise<boolean> {
     try {
       const res = await $fetch<LoginResponse>(apiUrl('/api/auth/refresh'), {
@@ -170,9 +177,22 @@ export function useAuth() {
 
   // Called once on mount: a page load has no token, only the cookie, so the
   // session is restored by asking for a fresh access token.
+  //
+  // Unless there is visibly no session to restore. The refresh token is
+  // HttpOnly and unreadable here, so this used to ask unconditionally — and
+  // search needs no account, so most visitors have never had one. Every one of
+  // them paid a request on the critical path to be told 401, and saw the error
+  // in their console.
+  //
+  // kb_session is the server's readable hint that a session exists. It grants
+  // nothing: forging it only buys the right to make the request that used to
+  // happen anyway, and the real token still has to be there. Absent, we skip.
+  //
+  // One-time cost of shipping this: anyone holding a session issued before the
+  // hint existed looks signed out until they sign in again, which reissues both.
   async function init() {
     if (ready.value) return
-    await refresh()
+    if (hasSessionHint()) await refresh()
     ready.value = true
   }
 

@@ -644,3 +644,66 @@ func TestRegistrationCannotConfirmSomeoneElsesPendingOptIn(t *testing.T) {
 		t.Errorf("rows = %+v, want the victim's row still pending", rows)
 	}
 }
+
+// The session hint is a performance hint, not a credential. If forging it ever
+// buys access, the whole idea is a vulnerability rather than an optimisation.
+func TestSessionHintCookieGrantsNothing(t *testing.T) {
+	mux, _ := testAPI(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: sessionHintCookie, Value: "1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh with only the hint gave %d, want 401", rec.Code)
+	}
+}
+
+// Logging out has to drop both halves. Clearing only the token would leave the
+// browser believing a session exists and asking for it on every page forever.
+func TestLogoutClearsTheHintAsWellAsTheToken(t *testing.T) {
+	mux, _ := testAPI(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: refreshCookie, Value: "whatever"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	cleared := map[string]bool{}
+	for _, c := range rec.Result().Cookies() {
+		if c.MaxAge < 0 {
+			cleared[c.Name] = true
+		}
+	}
+	for _, name := range []string{refreshCookie, sessionHintCookie} {
+		if !cleared[name] {
+			t.Errorf("logout did not clear %s", name)
+		}
+	}
+}
+
+// The hint must stay readable or the browser cannot use it, and must stay
+// worthless or it must not be readable. Both properties in one place.
+func TestSessionHintIsReadableAndTheTokenIsNot(t *testing.T) {
+	rec := httptest.NewRecorder()
+	setRefreshCookie(rec, "a-real-token", time.Hour)
+
+	seen := map[string]*http.Cookie{}
+	for _, c := range rec.Result().Cookies() {
+		seen[c.Name] = c
+	}
+	hint, ok := seen[sessionHintCookie]
+	if !ok {
+		t.Fatal("no session hint was set alongside the refresh token")
+	}
+	if hint.HttpOnly {
+		t.Error("the hint is HttpOnly, so the browser cannot read it and it does nothing")
+	}
+	if hint.Value == "a-real-token" {
+		t.Error("the hint carries the token value; it must carry no secret at all")
+	}
+	if tok := seen[refreshCookie]; tok == nil || !tok.HttpOnly {
+		t.Error("the refresh token must stay HttpOnly")
+	}
+}

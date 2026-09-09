@@ -48,6 +48,9 @@ const (
 	minPasswordLen = 10
 	maxPasswordLen = 200
 	refreshCookie  = "kb_refresh"
+	// A readable companion to the refresh token. Carries no authority; see
+	// setRefreshCookie for why it exists.
+	sessionHintCookie = "kb_session"
 	// Admin lists are paged. Uncapped, one ?limit=1000000 turns a dashboard
 	// into a full table scan streamed to a browser.
 	defaultPageLimit = 50
@@ -469,7 +472,38 @@ func (a *API) issueSession(w http.ResponseWriter, r *http.Request, user *store.U
 	})
 }
 
+// clearRefreshCookie drops both halves. Clearing only the token would leave the
+// hint behind, and the front end would go on asking for a session that is gone.
+func clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: refreshCookie, Path: "/api/auth", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: sessionHintCookie, Path: "/", MaxAge: -1})
+}
+
+// setRefreshCookie writes the session, plus a readable flag saying one exists.
+//
+// The refresh token is HttpOnly on purpose, which means the browser cannot ask
+// "am I signed in?" without a round trip. So the front end asked on every page
+// load, and since search is anonymous by design, the overwhelming majority of
+// those loads were anonymous: a wasted request on the critical path and a 401
+// in the console of every visitor who never had an account.
+//
+// The flag carries no authority. It is readable, so anyone can forge it, and
+// forging it buys nothing: all it permits is a refresh attempt that fails
+// without the real token. It is a hint that saves a round trip, never a
+// credential, and no handler reads it.
+//
+// Path is "/" because the hint is read on every page, while the token stays
+// scoped to /api/auth, the only place it is needed.
 func setRefreshCookie(w http.ResponseWriter, value string, ttl time.Duration) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionHintCookie,
+		Value:    "1",
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(ttl.Seconds()),
+	})
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookie,
 		Value:    value,
@@ -502,7 +536,7 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 		if userID != 0 {
 			a.log.Warn("refresh token reuse; all sessions revoked", "user_id", userID)
 		}
-		http.SetCookie(w, &http.Cookie{Name: refreshCookie, Path: "/api/auth", MaxAge: -1})
+		clearRefreshCookie(w)
 		fail(w, http.StatusUnauthorized, "نشست منقضی شده. دوباره وارد شو.")
 		return
 	}
@@ -527,7 +561,7 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(refreshCookie); err == nil && cookie.Value != "" {
 		_ = a.store.RevokeSession(r.Context(), tokens.Fingerprint(cookie.Value))
 	}
-	http.SetCookie(w, &http.Cookie{Name: refreshCookie, Path: "/api/auth", MaxAge: -1})
+	clearRefreshCookie(w)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
