@@ -59,18 +59,26 @@ const domain = computed(() => {
 })
 
 /**
- * Coordinates in the 0–100 viewBox, x by real timestamp rather than by index:
+ * Coordinates in the 0-100 viewBox, x by real timestamp rather than by index:
  * the crawler skips a cycle whenever the median is not reliable, and an
  * index-based axis would silently squeeze those gaps shut. A flat or
  * single-point series sits on the centre line instead of dividing by zero.
+ *
+ * TIME RUNS RIGHT TO LEFT, which is not a stylistic choice. The axis labels
+ * below are a plain flex row in an RTL document, so the first point's date
+ * renders on the right and the newest on the left. Plotting the earliest at
+ * x=0 put the line and its own labels in opposite directions: the line showed
+ * a price falling left to right while the labels said the left edge was the
+ * later day. Mirroring x makes the chart read the way the page reads, and
+ * needs no dir override that a later edit could quietly undo.
  */
 const coords = computed(() => {
   const d = domain.value
   if (!d) return []
   return (points.value ?? []).map((p) => {
-    const x = d.t1 > d.t0 ? ((Date.parse(p.t) - d.t0) / (d.t1 - d.t0)) * 100 : 50
+    const progress = d.t1 > d.t0 ? (Date.parse(p.t) - d.t0) / (d.t1 - d.t0) : 0.5
     const y = d.hi > d.lo ? 8 + (1 - (p.median - d.lo) / (d.hi - d.lo)) * 84 : 50
-    return { x, y }
+    return { x: 100 - progress * 100, y }
   })
 })
 
